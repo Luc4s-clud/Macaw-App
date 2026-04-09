@@ -1,0 +1,14 @@
+# Overrides locais de imagens do menu (opcional)
+config/menu-image-overrides.json
+
+# Variáveis de ambiente (contêm tokens e segredos)
+.env
+.env.local
+.env.*.local
+
+# Dependências
+node_modules/
+
+# Logs
+*.log
+npm-debug.log*

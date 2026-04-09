@@ -1,0 +1,21 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-background text-slate-900 font-body;
+}
+
+/* Rolagem horizontal de categorias no menu sem barra grossa no iOS/Android */
+@layer utilities {
+  .scrollbar-touch {
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+  }
+  .scrollbar-touch::-webkit-scrollbar {
+    height: 4px;
+  }
+  .scrollbar-touch::-webkit-scrollbar-thumb {
+    @apply rounded-full bg-primary/25;
+  }
+}
