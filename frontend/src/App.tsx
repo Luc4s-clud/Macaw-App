@@ -12,6 +12,7 @@ import EventsPage from './pages/EventsPage';
 import SignInPage from './pages/SignInPage';
 import CartDrawer from './components/CartDrawer';
 import Footer from './components/Footer';
+import CheckoutPage from './pages/CheckoutPage';
 import { CartProvider } from './context/CartContext';
 
 function App() {
@@ -28,13 +29,16 @@ function App() {
   const isContact = path === '/contact';
   const isEvents = path === '/events';
   const isSignIn = path === '/sign-in';
+  const isCheckout = path === '/checkout';
   const backgroundImage = isAbout
     ? '/pictures/about.avif'
-    : isHiring || isContact || isEvents || isSignIn
+    : isHiring || isContact || isEvents || isSignIn || isCheckout
       ? 'none'
       : '/pictures/Painel1.avif';
   const plainBg =
-    isHiring || isContact || isEvents || isSignIn ? 'bg-amber-50/95' : '';
+    isHiring || isContact || isEvents || isSignIn || isCheckout
+      ? 'bg-amber-50/95'
+      : '';
 
   return (
     <CartProvider>
@@ -50,7 +54,7 @@ function App() {
             />
           </div>
         )}
-        {!isHiring && !isContact && !isEvents && !isSignIn && (
+        {!isHiring && !isContact && !isEvents && !isSignIn && !isCheckout && (
           <div className="absolute inset-0 z-[1] bg-white/88 backdrop-blur-[2px]" aria-hidden />
         )}
         <div className="relative z-10 flex flex-col min-h-screen">
@@ -73,6 +77,7 @@ function App() {
               <Route path="/contact" element={<ContactPage />} />
               <Route path="/events" element={<EventsPage />} />
               <Route path="/sign-in" element={<SignInPage />} />
+              <Route path="/checkout" element={<CheckoutPage />} />
               <Route
                 path="/menu"
                 element={

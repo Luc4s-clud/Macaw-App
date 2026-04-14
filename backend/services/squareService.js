@@ -115,6 +115,59 @@ function imageObjectPublicUrl(imageObj) {
   return typeof u === 'string' ? u.trim() : '';
 }
 
+function normalizeTextForKey(value) {
+  return String(value ?? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function normalizeItemNameForDedupe(name) {
+  return normalizeTextForKey(name)
+    // remove palavras que variam por catálogo mas não mudam o produto-base
+    .replace(/\bacai\b/g, ' ')
+    .replace(/\bbowl\b/g, ' ')
+    .replace(/\bregular\b/g, ' ')
+    .replace(/\bsmall\b|\blarge\b/g, ' ')
+    // remove tamanhos em oz (ex.: "16oz", "16 oz")
+    .replace(/\b\d+\s*oz\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Duplicatas no Square: mesmos tamanhos que "Bowl - 16oz/24oz" mas com título
+ * "Açaí Bowl - …" e sem foto — não listar em Build your own.
+ */
+function isHiddenBuildYourOwnDuplicate(name) {
+  const n = normalizeTextForKey(name);
+  return /^acai bowl (16|24) oz regular$/.test(n);
+}
+
+function canonicalizeCategorySlug(slug) {
+  const key = normalizeTextForKey(slug).replace(/\s+/g, '-');
+  const aliases = {
+    'build-your-own': 'build-your-own',
+    'build-you-own': 'build-your-own',
+    'bowls-16-oz': 'bowls-16oz',
+    'bowls-16oz': 'bowls-16oz',
+    'bowls16oz': 'bowls-16oz',
+    'bowls-24-oz': 'bowls-24oz',
+    'bowls-24oz': 'bowls-24oz',
+    'bowls24oz': 'bowls-24oz',
+    'special-cup': 'special-cups',
+    'special-cups': 'special-cups',
+    'crepe-swiss': 'crepe-swiss',
+    'crpe-swiss': 'crepe-swiss',
+    smoothies: 'smoothies',
+    drinks: 'drinks',
+  };
+  return aliases[key] || key || 'other';
+}
+
 /** IDs de imagem referenciados por itens/variações (para buscar objetos IMAGE que não vieram no list) */
 function collectReferencedImageIds(objects) {
   const ids = new Set();
@@ -188,6 +241,45 @@ function resolveItemImageUrl(itemData, variationData, byId) {
   return '';
 }
 
+function dedupeMenuItems(items) {
+  const byKey = new Map();
+  for (const item of items) {
+    const normalizedName = normalizeItemNameForDedupe(item.name);
+    const signature = [
+      canonicalizeCategorySlug(item.category),
+      normalizedName || normalizeTextForKey(item.name),
+      Number(item.price).toFixed(2),
+    ].join('|');
+    const prev = byKey.get(signature);
+    if (!prev) {
+      byKey.set(signature, item);
+      continue;
+    }
+
+    // Regra principal: sempre preferir a versão com imagem válida.
+    const prevHasImage = Boolean(prev.imageUrl && String(prev.imageUrl).trim());
+    const nextHasImage = Boolean(item.imageUrl && String(item.imageUrl).trim());
+    if (nextHasImage && !prevHasImage) {
+      byKey.set(signature, item);
+      continue;
+    }
+    if (prevHasImage && !nextHasImage) {
+      continue;
+    }
+
+    const prevScore =
+      (prev.description ? 1 : 0) +
+      normalizeTextForKey(prev.name).length;
+    const nextScore =
+      (item.description ? 1 : 0) +
+      normalizeTextForKey(item.name).length;
+    if (nextScore > prevScore || (nextScore === prevScore && item.id < prev.id)) {
+      byKey.set(signature, item);
+    }
+  }
+  return [...byKey.values()];
+}
+
 function mapCatalogToMenuItems(objects, imageOverrides = {}) {
   const byId = Object.fromEntries(objects.map((o) => [o.id, o]));
   const items = [];
@@ -205,10 +297,11 @@ function mapCatalogToMenuItems(objects, imageOverrides = {}) {
         : (itemData.reporting_category?.id ?? itemData.category_id);
     const categoryName =
       (categoryId && byId[categoryId]?.category_data?.name) || 'other';
-    const category = categoryName
+    const rawCategory = categoryName
       .toLowerCase()
       .replace(/\s+/g, '-')
       .replace(/[^a-z0-9-]/g, '') || 'other';
+    const category = canonicalizeCategorySlug(rawCategory);
 
     for (const varRef of itemData.variations) {
       const varId = catalogRefToId(varRef);
@@ -230,6 +323,9 @@ function mapCatalogToMenuItems(objects, imageOverrides = {}) {
           ? priceMoney.amount / 100
           : 0;
       const name = v.name ? `${itemData.name} - ${v.name}`.slice(0, ORDER_LIMITS.MAX_NAME_LENGTH) : (itemData.name || '').slice(0, ORDER_LIMITS.MAX_NAME_LENGTH);
+      if (category === 'build-your-own' && isHiddenBuildYourOwnDuplicate(name)) {
+        continue;
+      }
       items.push({
         id: varId,
         squareVariationId: varId,
@@ -242,7 +338,7 @@ function mapCatalogToMenuItems(objects, imageOverrides = {}) {
       });
     }
   }
-  return items;
+  return dedupeMenuItems(items);
 }
 
 /** Cache em memória do menu (evita refazer N chamadas ao Square a cada GET). */
@@ -324,7 +420,17 @@ function sanitizeOrderItem(item) {
   return { name, price, quantity, observation };
 }
 
-export async function createOrder(validatedItems) {
+function buildCheckoutOrderNote(meta = {}) {
+  const parts = [];
+  if (meta.customerName) parts.push(`Cliente: ${meta.customerName}`);
+  if (meta.customerPhone) parts.push(`Tel: ${meta.customerPhone}`);
+  if (meta.customerEmail) parts.push(`Email: ${meta.customerEmail}`);
+  if (meta.orderNote) parts.push(`Obs: ${meta.orderNote}`);
+  if (parts.length === 0) return '';
+  return parts.join(' | ');
+}
+
+export async function createOrder(validatedItems, checkoutMeta = {}) {
   const { locationId } = getConfig();
   const lineItems = validatedItems.map((i) => {
     const { name, price, quantity, observation } = sanitizeOrderItem(i);
@@ -339,11 +445,14 @@ export async function createOrder(validatedItems) {
     };
   });
 
+  const orderNote = buildCheckoutOrderNote(checkoutMeta).slice(0, 500);
+
   const body = {
     idempotency_key: crypto.randomUUID(),
     order: {
       location_id: locationId,
       line_items: lineItems,
+      ...(orderNote && { note: orderNote }),
     },
   };
 
@@ -352,4 +461,66 @@ export async function createOrder(validatedItems) {
     body: JSON.stringify(body),
   });
   return data.order;
+}
+
+/**
+ * Total em centavos a partir da resposta do pedido no Square, ou soma dos itens.
+ */
+export function getOrderTotalAmountCents(order, validatedItems) {
+  const fromOrder = order?.total_money?.amount;
+  if (typeof fromOrder === 'number' && Number.isFinite(fromOrder) && fromOrder > 0) {
+    return fromOrder;
+  }
+  let sum = 0;
+  for (const i of validatedItems) {
+    const { price, quantity } = sanitizeOrderItem(i);
+    sum += Math.round(price * 100) * quantity;
+  }
+  return sum;
+}
+
+/**
+ * Cobra o pedido com o token do Web Payments SDK (`source_id`).
+ * O valor deve coincidir com o total do pedido no Square.
+ */
+export async function createPayment({ sourceId, orderId, amountCents }) {
+  const { locationId } = getConfig();
+  if (!sourceId || typeof sourceId !== 'string') {
+    const err = new Error('Token de pagamento inválido.');
+    err.statusCode = 400;
+    throw err;
+  }
+  if (!orderId || !amountCents || amountCents < 1) {
+    const err = new Error('Dados do pedido para pagamento inválidos.');
+    err.statusCode = 400;
+    throw err;
+  }
+  const body = {
+    idempotency_key: crypto.randomUUID(),
+    location_id: locationId,
+    source_id: sourceId.trim(),
+    amount_money: {
+      amount: amountCents,
+      currency: 'USD',
+    },
+    order_id: orderId,
+    autocomplete: true,
+  };
+  const data = await squareFetch('/v2/payments', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+  return data.payment;
+}
+
+/** Cancela um pedido aberto (ex.: após falha no pagamento). */
+export async function cancelOrder(orderId) {
+  if (!orderId) return;
+  const body = {
+    idempotency_key: crypto.randomUUID(),
+  };
+  await squareFetch(`/v2/orders/${encodeURIComponent(orderId)}/cancel`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
 }

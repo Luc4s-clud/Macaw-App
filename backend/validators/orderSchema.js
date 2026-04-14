@@ -28,4 +28,11 @@ export const createOrderBodySchema = z.object({
     .array(orderItemSchema)
     .min(1, 'Envie pelo menos um item')
     .max(ORDER_LIMITS.MAX_ITEMS),
+  /** Checkout: dados do cliente (vão para a nota do pedido no Square) */
+  customerName: z.string().trim().min(1).max(120).optional(),
+  customerPhone: z.string().trim().min(1).max(40).optional(),
+  customerEmail: z.union([z.string().email().max(120), z.literal('')]).optional(),
+  orderNote: z.string().trim().max(500).optional(),
+  /** Token do Square Web Payments SDK (CreatePayment `source_id`). Opcional: sem token = só pedido. */
+  paymentSourceId: z.string().trim().min(1).max(512).optional(),
 });

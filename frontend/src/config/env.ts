@@ -25,3 +25,26 @@ export function requireApiUrl(): string {
   }
   return apiBaseUrl;
 }
+
+/** Application ID do Square (público) — Web Payments SDK no checkout. */
+const SQUARE_APP = import.meta.env.VITE_SQUARE_APPLICATION_ID;
+/** Location ID (mesmo do backend). */
+const SQUARE_LOC = import.meta.env.VITE_SQUARE_LOCATION_ID;
+const SQUARE_VITE_ENV = import.meta.env.VITE_SQUARE_ENV;
+
+export function squareApplicationId(): string {
+  return typeof SQUARE_APP === 'string' ? SQUARE_APP.trim() : '';
+}
+
+export function squareLocationId(): string {
+  return typeof SQUARE_LOC === 'string' ? SQUARE_LOC.trim() : '';
+}
+
+/** sandbox | production — define a URL do script do Web Payments SDK. */
+export function squarePaymentsEnv(): 'sandbox' | 'production' {
+  return SQUARE_VITE_ENV === 'production' ? 'production' : 'sandbox';
+}
+
+export function isSquarePaymentsConfigured(): boolean {
+  return Boolean(squareApplicationId() && squareLocationId());
+}

@@ -19,6 +19,84 @@ function apiItemToProduct(m: ApiMenuItem): Product {
   };
 }
 
+function normalizeTextForKey(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function normalizeNameForDedupe(name: string): string {
+  return normalizeTextForKey(name)
+    .replace(/\bacai\b/g, ' ')
+    .replace(/\bbowl\b/g, ' ')
+    .replace(/\bregular\b/g, ' ')
+    .replace(/\bsmall\b|\blarge\b/g, ' ')
+    .replace(/\b\d+\s*oz\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function canonicalizeCategoryForDedupe(category: string): string {
+  const key = normalizeTextForKey(category).replace(/\s+/g, '-');
+  const aliases: Record<string, string> = {
+    'build-your-own': 'build-your-own',
+    'build-you-own': 'build-your-own',
+    'bowls-16-oz': 'bowls-16oz',
+    'bowls-16oz': 'bowls-16oz',
+    'bowls16oz': 'bowls-16oz',
+    'bowls-24-oz': 'bowls-24oz',
+    'bowls-24oz': 'bowls-24oz',
+    'bowls24oz': 'bowls-24oz',
+    'special-cup': 'special-cups',
+    'special-cups': 'special-cups',
+    'crepe-swiss': 'crepe-swiss',
+    'crpe-swiss': 'crepe-swiss',
+  };
+  return aliases[key] || key;
+}
+
+/** Oculta duplicatas "Açaí Bowl - 16/24 Oz" em Build your own (mantém Bowl - 16oz/24oz com foto). */
+function isHiddenBuildYourOwnDuplicate(product: Product): boolean {
+  if (canonicalizeCategoryForDedupe(product.category) !== 'build-your-own') {
+    return false;
+  }
+  const n = normalizeTextForKey(product.name);
+  return /^acai bowl (16|24) oz regular$/.test(n);
+}
+
+function dedupeProducts(products: Product[]): Product[] {
+  const byKey = new Map<string, Product>();
+  for (const item of products) {
+    const nameKey = normalizeNameForDedupe(item.name) || normalizeTextForKey(item.name);
+    const categoryKey = canonicalizeCategoryForDedupe(item.category);
+    const key = `${categoryKey}|${nameKey}|${Number(item.price).toFixed(2)}`;
+    const prev = byKey.get(key);
+    if (!prev) {
+      byKey.set(key, item);
+      continue;
+    }
+    // Sempre mantém a versão com imagem quando houver conflito.
+    const prevHasImage = Boolean(prev.imageUrl?.trim());
+    const nextHasImage = Boolean(item.imageUrl?.trim());
+    if (nextHasImage && !prevHasImage) {
+      byKey.set(key, item);
+      continue;
+    }
+    if (prevHasImage && !nextHasImage) continue;
+
+    const prevScore = (prev.description ? 1 : 0) + prev.name.length;
+    const nextScore = (item.description ? 1 : 0) + item.name.length;
+    if (nextScore > prevScore || (nextScore === prevScore && item.id < prev.id)) {
+      byKey.set(key, item);
+    }
+  }
+  return [...byKey.values()];
+}
+
 interface Props {
   onItemAddedToCart: () => void;
 }
@@ -38,10 +116,13 @@ function MenuPage({ onItemAddedToCart }: Props) {
     getMenu()
       .then((items) => {
         if (cancelled) return;
-        setMenuItems(items.map(apiItemToProduct));
+        const mapped = dedupeProducts(
+          items.map(apiItemToProduct).filter((p) => !isHiddenBuildYourOwnDuplicate(p))
+        );
+        setMenuItems(mapped);
         setError(null);
         setSelectedCategory((prev) => {
-          const cats = buildMenuCategories(items.map(apiItemToProduct));
+          const cats = buildMenuCategories(mapped);
           const tabIds = cats.map((c) => c.id);
           if (tabIds.length === 0) return prev;
           return prev && tabIds.includes(prev) ? prev : tabIds[0];

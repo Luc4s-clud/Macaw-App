@@ -1,3 +1,4 @@
+import { useNavigate } from 'react-router-dom';
 import { useCart } from '../context/CartContext';
 import { X, Minus, Plus, Trash2 } from 'lucide-react';
 import ProductImageDisplay from './ProductImageDisplay';
@@ -8,16 +9,14 @@ interface Props {
 }
 
 function CartDrawer({ open, onClose }: Props) {
-  const { items, total, changeQuantity, removeItem, clear } = useCart();
+  const navigate = useNavigate();
+  const { items, total, changeQuantity, removeItem } = useCart();
 
   if (!open) return null;
 
   function handleCheckout() {
-    alert(
-      'Order submitted! (You can connect a backend or WhatsApp later.)'
-    );
-    clear();
     onClose();
+    navigate('/checkout');
   }
 
   return (
