@@ -27,6 +27,7 @@ export async function createOrder(
       ...(checkout?.customerEmail && { customerEmail: checkout.customerEmail }),
       ...(checkout?.orderNote?.trim() && { orderNote: checkout.orderNote.trim() }),
       ...(checkout?.paymentSourceId && { paymentSourceId: checkout.paymentSourceId }),
+      ...(checkout?.hostedCheckout === true && { hostedCheckout: true }),
     },
     timeoutMs: 15_000,
   });

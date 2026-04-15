@@ -13,6 +13,7 @@ import SignInPage from './pages/SignInPage';
 import CartDrawer from './components/CartDrawer';
 import Footer from './components/Footer';
 import CheckoutPage from './pages/CheckoutPage';
+import CheckoutCompletePage from './pages/CheckoutCompletePage';
 import { CartProvider } from './context/CartContext';
 
 function App() {
@@ -29,7 +30,7 @@ function App() {
   const isContact = path === '/contact';
   const isEvents = path === '/events';
   const isSignIn = path === '/sign-in';
-  const isCheckout = path === '/checkout';
+  const isCheckout = path === '/checkout' || path === '/checkout/complete';
   const backgroundImage = isAbout
     ? '/pictures/about.avif'
     : isHiring || isContact || isEvents || isSignIn || isCheckout
@@ -78,6 +79,7 @@ function App() {
               <Route path="/events" element={<EventsPage />} />
               <Route path="/sign-in" element={<SignInPage />} />
               <Route path="/checkout" element={<CheckoutPage />} />
+              <Route path="/checkout/complete" element={<CheckoutCompletePage />} />
               <Route
                 path="/menu"
                 element={

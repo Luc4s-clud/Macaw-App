@@ -27,7 +27,7 @@ function headers(token) {
   return {
     Authorization: `Bearer ${token}`,
     'Content-Type': 'application/json',
-    'Square-Version': '2024-11-20',
+    'Square-Version': '2025-06-18',
   };
 }
 
@@ -430,8 +430,10 @@ function buildCheckoutOrderNote(meta = {}) {
   return parts.join(' | ');
 }
 
-export async function createOrder(validatedItems, checkoutMeta = {}) {
-  const { locationId } = getConfig();
+/**
+ * Monta line_items + note para Orders API e Checkout API (Payment Link).
+ */
+function buildSquareOrderInner(validatedItems, checkoutMeta = {}) {
   const lineItems = validatedItems.map((i) => {
     const { name, price, quantity, observation } = sanitizeOrderItem(i);
     return {
@@ -444,15 +446,21 @@ export async function createOrder(validatedItems, checkoutMeta = {}) {
       ...(observation && { note: observation }),
     };
   });
-
   const orderNote = buildCheckoutOrderNote(checkoutMeta).slice(0, 500);
+  return {
+    line_items: lineItems,
+    ...(orderNote && { note: orderNote }),
+  };
+}
 
+export async function createOrder(validatedItems, checkoutMeta = {}) {
+  const { locationId } = getConfig();
+  const inner = buildSquareOrderInner(validatedItems, checkoutMeta);
   const body = {
     idempotency_key: crypto.randomUUID(),
     order: {
       location_id: locationId,
-      line_items: lineItems,
-      ...(orderNote && { note: orderNote }),
+      ...inner,
     },
   };
 
@@ -461,6 +469,60 @@ export async function createOrder(validatedItems, checkoutMeta = {}) {
     body: JSON.stringify(body),
   });
   return data.order;
+}
+
+/**
+ * Checkout hospedado pela Square: cria o pedido e retorna URL do Payment Link.
+ * @see https://developer.squareup.com/reference/square/checkout-api/create-payment-link
+ */
+export async function createCheckoutPaymentLink(
+  validatedItems,
+  checkoutMeta = {},
+  redirectUrl
+) {
+  const { locationId } = getConfig();
+  const url = typeof redirectUrl === 'string' ? redirectUrl.trim() : '';
+  if (!url) {
+    const err = new Error('URL de retorno após pagamento não configurada (CHECKOUT_SUCCESS_URL).');
+    err.statusCode = 500;
+    throw err;
+  }
+  const inner = buildSquareOrderInner(validatedItems, checkoutMeta);
+  const body = {
+    idempotency_key: crypto.randomUUID(),
+    order: {
+      location_id: locationId,
+      ...inner,
+    },
+    checkout_options: {
+      redirect_url: url,
+    },
+  };
+  const email = checkoutMeta.customerEmail?.trim();
+  if (email) {
+    body.pre_populated_data = { buyer_email: email };
+  }
+
+  const data = await squareFetch('/v2/online-checkout/payment-links', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+  const pl = data.payment_link;
+  const checkoutUrl = pl?.long_url || pl?.url || '';
+  const orderId =
+    pl?.order_id ||
+    data.related_resources?.orders?.[0]?.id ||
+    null;
+  if (!checkoutUrl || !orderId) {
+    const err = new Error('Resposta inválida ao criar link de pagamento.');
+    err.statusCode = 502;
+    throw err;
+  }
+  return {
+    checkoutUrl,
+    orderId,
+    paymentLinkId: pl?.id ?? null,
+  };
 }
 
 /**

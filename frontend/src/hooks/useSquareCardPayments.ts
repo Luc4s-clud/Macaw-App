@@ -68,15 +68,21 @@ async function getPaymentsApi(
     : raw;
 }
 
+type UseSquareCardPaymentsOptions = {
+  /** Se false, não carrega o SDK (ex.: checkout hospedado na Square). Padrão: true. */
+  enabled?: boolean;
+};
+
 /**
  * Carrega o Web Payments SDK, anexa o formulário de cartão ao container e expõe tokenize().
  */
-export function useSquareCardPayments() {
+export function useSquareCardPayments(options?: UseSquareCardPaymentsOptions) {
+  const enabled = options?.enabled !== false;
   const containerRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<SquareCardHandler | null>(null);
   const [ready, setReady] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const configured = isSquarePaymentsConfigured();
+  const configured = enabled && isSquarePaymentsConfigured();
 
   useEffect(() => {
     if (!configured) return;

@@ -1,10 +1,12 @@
 import { Router } from 'express';
 import {
   cancelOrder,
+  createCheckoutPaymentLink,
   createOrder,
   createPayment,
   getOrderTotalAmountCents,
 } from '../services/squareService.js';
+import { loadEnv } from '../config/env.js';
 import { validateBody } from '../middleware/validate.js';
 import { createOrderBodySchema } from '../validators/orderSchema.js';
 
@@ -27,7 +29,34 @@ router.post(
         customerEmail,
         orderNote,
         paymentSourceId,
+        hostedCheckout,
       } = req.validated;
+
+      if (hostedCheckout) {
+        const env = loadEnv();
+        if (!env.CHECKOUT_SUCCESS_URL?.trim()) {
+          const err = new Error(
+            'CHECKOUT_SUCCESS_URL não está configurada no servidor. Defina a URL da página de sucesso (ex.: https://seusite.com/checkout/complete).'
+          );
+          err.statusCode = 500;
+          throw err;
+        }
+        const { checkoutUrl, orderId } = await createCheckoutPaymentLink(
+          items,
+          {
+            customerName,
+            customerPhone,
+            customerEmail: customerEmail || undefined,
+            orderNote,
+          },
+          env.CHECKOUT_SUCCESS_URL.trim()
+        );
+        return res.status(201).json({
+          orderId,
+          checkoutUrl,
+        });
+      }
+
       const order = await createOrder(items, {
         customerName,
         customerPhone,

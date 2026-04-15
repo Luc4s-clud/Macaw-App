@@ -48,3 +48,11 @@ export function squarePaymentsEnv(): 'sandbox' | 'production' {
 export function isSquarePaymentsConfigured(): boolean {
   return Boolean(squareApplicationId() && squareLocationId());
 }
+
+/** `hosted` = Payment Link (redirect para a Square). `inline` = Web Payments SDK no site (padrão). */
+export type SquareCheckoutMode = 'hosted' | 'inline';
+
+export function squareCheckoutMode(): SquareCheckoutMode {
+  const m = import.meta.env.VITE_SQUARE_CHECKOUT;
+  return m === 'hosted' ? 'hosted' : 'inline';
+}

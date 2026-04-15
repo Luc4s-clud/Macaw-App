@@ -23,9 +23,11 @@ export interface CreateOrderItemInput {
 
 export interface CreateOrderResponse {
   orderId: string;
-  order: { id: string; [key: string]: unknown };
+  order?: { id: string; [key: string]: unknown };
   /** Presente quando o pagamento com cartão foi processado no Square. */
   paymentId?: string;
+  /** URL do checkout hospedado (Payment Link), quando hostedCheckout foi usado. */
+  checkoutUrl?: string;
 }
 
 /** Campos opcionais enviados junto com os itens no checkout */
@@ -36,6 +38,8 @@ export interface CreateOrderCheckoutFields {
   orderNote?: string;
   /** Token do Web Payments SDK (obrigatório quando o checkout exige pagamento online). */
   paymentSourceId?: string;
+  /** Checkout hospedado pela Square (Payment Link); exige CHECKOUT_SUCCESS_URL no backend. */
+  hostedCheckout?: boolean;
 }
 
 export interface MenuResponse {

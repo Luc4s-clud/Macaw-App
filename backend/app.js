@@ -6,11 +6,17 @@ import { requestLogger } from './middleware/requestLogger.js';
 import { errorHandler, notFound } from './middleware/errorHandler.js';
 import menuRoutes from './routes/menu.js';
 import orderRoutes from './routes/orders.js';
+import squareWebhookRoutes from './routes/webhooks.js';
 
 export function createApp() {
   const env = loadEnv();
   const app = express();
 
+  app.use(
+    '/api/webhooks/square',
+    express.raw({ type: 'application/json' }),
+    squareWebhookRoutes
+  );
   app.use(express.json({ limit: '32kb' }));
   app.use(
     cors({

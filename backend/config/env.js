@@ -13,6 +13,14 @@ const optional = {
   PORT: '3001',
   SQUARE_ENV: 'sandbox',
   CORS_ORIGIN: '',
+  /** URL completa da página de sucesso no site (ex.: https://loja.com/checkout/complete). Usada no Payment Link (redirect após pagar). */
+  CHECKOUT_SUCCESS_URL: '',
+  /** Assinatura HMAC do webhook (Developer Dashboard → Webhooks → assinatura). */
+  SQUARE_WEBHOOK_SIGNATURE_KEY: '',
+  /** URL pública exatamente como cadastrada no webhook Square (ex.: https://api.loja.com/api/webhooks/square). */
+  SQUARE_WEBHOOK_NOTIFICATION_URL: '',
+  /** Apenas desenvolvimento: aceitar webhooks sem validar assinatura (não use em produção). */
+  WEBHOOK_ALLOW_UNSIGNED: 'false',
 };
 
 function getEnv() {

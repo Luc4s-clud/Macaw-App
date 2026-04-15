@@ -5,17 +5,21 @@ import { createOrder } from '../services/api';
 import { ApiError } from '../services/api/client';
 import ProductImageDisplay from '../components/ProductImageDisplay';
 import { useSquareCardPayments } from '../hooks/useSquareCardPayments';
+import { squareCheckoutMode } from '../config/env';
+
+const PENDING_ORDER_KEY = 'macaw_pending_square_order';
 
 function CheckoutPage() {
   const navigate = useNavigate();
   const { items, total, clear } = useCart();
+  const hostedCheckout = squareCheckoutMode() === 'hosted';
   const {
     containerRef: squareCardContainerRef,
     ready: squareCardReady,
     loadError: squareLoadError,
     tokenize: squareTokenize,
     configured: squarePayConfigured,
-  } = useSquareCardPayments();
+  } = useSquareCardPayments({ enabled: !hostedCheckout });
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
@@ -44,7 +48,7 @@ function CheckoutPage() {
       setError('Please enter your name and phone number.');
       return;
     }
-    if (squarePayConfigured && !squareCardReady) {
+    if (!hostedCheckout && squarePayConfigured && !squareCardReady) {
       setError('Wait for the card form to load, then try again.');
       return;
     }
@@ -52,7 +56,7 @@ function CheckoutPage() {
     setSubmitting(true);
     try {
       let paymentSourceId: string | undefined;
-      if (squarePayConfigured) {
+      if (!hostedCheckout && squarePayConfigured) {
         paymentSourceId = await squareTokenize();
       }
 
@@ -69,7 +73,19 @@ function CheckoutPage() {
         ...(customerEmail.trim() && { customerEmail: customerEmail.trim() }),
         ...(orderNote.trim() && { orderNote: orderNote.trim() }),
         ...(paymentSourceId && { paymentSourceId }),
+        ...(hostedCheckout && { hostedCheckout: true }),
       });
+
+      if (hostedCheckout && res.checkoutUrl) {
+        try {
+          sessionStorage.setItem(PENDING_ORDER_KEY, res.orderId);
+        } catch {
+          /* ignore */
+        }
+        window.location.assign(res.checkoutUrl);
+        return;
+      }
+
       setOrderId(res.orderId);
       setPaymentId(res.paymentId ?? null);
       clear();
@@ -119,7 +135,9 @@ function CheckoutPage() {
           Checkout
         </h1>
         <p className="text-sm text-slate-600 mt-1">
-          Review your order and enter your contact details.
+          {hostedCheckout
+            ? 'Review your order, then you will be redirected to Square to pay securely.'
+            : 'Review your order and enter your contact details.'}
         </p>
       </div>
 
@@ -222,7 +240,7 @@ function CheckoutPage() {
             <p className="text-xs text-slate-500 mt-1">{orderNote.length}/500</p>
           </div>
 
-          {squarePayConfigured && (
+          {!hostedCheckout && squarePayConfigured && (
             <div className="space-y-2 pt-2 border-t border-slate-100">
               <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
                 Card payment
@@ -257,17 +275,21 @@ function CheckoutPage() {
               disabled={
                 submitting ||
                 items.length === 0 ||
-                (squarePayConfigured && !squareCardReady)
+                (!hostedCheckout && squarePayConfigured && !squareCardReady)
               }
               className="flex-1 rounded-full bg-primary text-white font-semibold py-2.5 text-sm shadow-md hover:bg-primaryDark transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
             >
               {submitting
-                ? squarePayConfigured
-                  ? 'Processing payment…'
-                  : 'Placing order…'
-                : squarePayConfigured
-                  ? `Pay $ ${total.toFixed(2)}`
-                  : `Place order · $ ${total.toFixed(2)}`}
+                ? hostedCheckout
+                  ? 'Redirecting to Square…'
+                  : squarePayConfigured
+                    ? 'Processing payment…'
+                    : 'Placing order…'
+                : hostedCheckout
+                  ? `Continue to pay $ ${total.toFixed(2)}`
+                  : squarePayConfigured
+                    ? `Pay $ ${total.toFixed(2)}`
+                    : `Place order · $ ${total.toFixed(2)}`}
             </button>
             <Link
               to="/menu"

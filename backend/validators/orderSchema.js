@@ -35,4 +35,12 @@ export const createOrderBodySchema = z.object({
   orderNote: z.string().trim().max(500).optional(),
   /** Token do Square Web Payments SDK (CreatePayment `source_id`). Opcional: sem token = só pedido. */
   paymentSourceId: z.string().trim().min(1).max(512).optional(),
-});
+  /** Se true, cria Payment Link (checkout hospedado) em vez de cobrar com token no servidor. */
+  hostedCheckout: z.boolean().optional(),
+}).refine(
+  (d) => !(d.hostedCheckout && d.paymentSourceId),
+  {
+    message: 'hostedCheckout e paymentSourceId não podem ser usados juntos.',
+    path: ['hostedCheckout'],
+  }
+);
