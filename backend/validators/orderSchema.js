@@ -33,6 +33,22 @@ export const createOrderBodySchema = z.object({
   customerPhone: z.string().trim().min(1).max(40).optional(),
   customerEmail: z.union([z.string().email().max(120), z.literal('')]).optional(),
   orderNote: z.string().trim().max(500).optional(),
+  fulfillmentType: z.enum(['delivery', 'pickup']).optional(),
+  deliveryAddressLine1: z.string().trim().min(1).max(120).optional(),
+  deliveryAddressLine2: z.string().trim().max(120).optional(),
+  deliveryCity: z.string().trim().min(1).max(80).optional(),
+  /** Estado (US): 2 letras, ex.: FL — usado em administrative_district_level_1 na Square */
+  deliveryState: z
+    .string()
+    .trim()
+    .optional()
+    .transform((s) => s ?? '')
+    .transform((s) => s.toUpperCase())
+    .refine((s) => s.length === 0 || /^[A-Z]{2}$/.test(s), {
+      message: 'Estado deve ter 2 letras (ex.: FL).',
+    })
+    .transform((s) => (s.length === 0 ? undefined : s)),
+  deliveryPostalCode: z.string().trim().min(1).max(20).optional(),
   /** Token do Square Web Payments SDK (CreatePayment `source_id`). Opcional: sem token = só pedido. */
   paymentSourceId: z.string().trim().min(1).max(512).optional(),
   /** Se true, cria Payment Link (checkout hospedado) em vez de cobrar com token no servidor. */
@@ -42,5 +58,16 @@ export const createOrderBodySchema = z.object({
   {
     message: 'hostedCheckout e paymentSourceId não podem ser usados juntos.',
     path: ['hostedCheckout'],
+  }
+).refine(
+  (d) =>
+    d.fulfillmentType !== 'delivery' ||
+    (Boolean(d.deliveryAddressLine1) &&
+      Boolean(d.deliveryCity) &&
+      Boolean(d.deliveryPostalCode) &&
+      Boolean(d.deliveryState)),
+  {
+    message: 'Para delivery, informe endereco, cidade, estado (2 letras) e CEP.',
+    path: ['deliveryAddressLine1'],
   }
 );

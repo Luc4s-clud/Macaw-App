@@ -10,6 +10,7 @@ interface HeaderProps {
 
 const navItems = [
   { to: '/menu', label: 'Menu' },
+  { to: '/track-order', label: 'Track Order' },
   { to: '/about', label: 'Our Story' },
   { to: '/events', label: 'Events & Specials' },
 ] as const;

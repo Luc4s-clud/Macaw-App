@@ -108,6 +108,7 @@ function MenuPage({ onItemAddedToCart }: Props) {
   const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [selected, setSelected] = useState<Product | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [menuVisible, setMenuVisible] = useState(false);
 
   const categories = useMemo(() => buildMenuCategories(menuItems), [menuItems]);
 
@@ -137,6 +138,14 @@ function MenuPage({ onItemAddedToCart }: Props) {
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  useEffect(() => {
+    setMenuVisible(false);
+    const timer = window.setTimeout(() => {
+      setMenuVisible(true);
+    }, 30);
+    return () => window.clearTimeout(timer);
   }, []);
 
   const filtered = useMemo(() => {
@@ -178,7 +187,11 @@ function MenuPage({ onItemAddedToCart }: Props) {
   }
 
   return (
-    <>
+    <div
+      className={`transition-all duration-500 ease-out ${
+        menuVisible ? 'translate-y-0 opacity-100' : 'translate-y-3 opacity-0'
+      }`}
+    >
       <div className="flex flex-col md:flex-row items-stretch md:items-start gap-3 md:gap-6 lg:gap-10">
         <CategorySidebar
           categories={categories.length > 0 ? categories : undefined}
@@ -227,7 +240,7 @@ function MenuPage({ onItemAddedToCart }: Props) {
         onClose={() => setModalOpen(false)}
         onAddedToCart={onItemAddedToCart}
       />
-    </>
+    </div>
   );
 }
 

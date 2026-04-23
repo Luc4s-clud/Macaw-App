@@ -8,9 +8,14 @@ interface Props {
   onClose: () => void;
 }
 
+const SALES_TAX_RATE = 0.06;
+const SERVICE_FEE = 1.5;
+
 function CartDrawer({ open, onClose }: Props) {
   const navigate = useNavigate();
   const { items, total, changeQuantity, removeItem } = useCart();
+  const salesTax = Number((total * SALES_TAX_RATE).toFixed(2));
+  const finalTotal = Number((total + salesTax + SERVICE_FEE).toFixed(2));
 
   if (!open) return null;
 
@@ -111,9 +116,23 @@ function CartDrawer({ open, onClose }: Props) {
 
         <div className="border-t border-slate-100 px-5 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] space-y-3">
           <div className="flex items-center justify-between text-sm">
-            <span className="text-slate-600">Total</span>
+            <span className="text-slate-600">Subtotal</span>
             <span className="font-semibold text-lg text-primaryDark">
               $ {total.toFixed(2)}
+            </span>
+          </div>
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-slate-600">Sales tax (6%)</span>
+            <span className="font-medium text-slate-800">$ {salesTax.toFixed(2)}</span>
+          </div>
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-slate-600">Service fee</span>
+            <span className="font-medium text-slate-800">$ {SERVICE_FEE.toFixed(2)}</span>
+          </div>
+          <div className="flex items-center justify-between text-sm border-t border-slate-100 pt-2">
+            <span className="text-slate-700 font-medium">Order total</span>
+            <span className="font-semibold text-lg text-primaryDark">
+              $ {finalTotal.toFixed(2)}
             </span>
           </div>
           <button

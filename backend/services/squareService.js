@@ -10,6 +10,9 @@ import {
   resolveImageOverride,
 } from '../config/menuImageOverrides.js';
 
+const ORDER_TAX_PERCENTAGE = '6';
+const SERVICE_FEE_AMOUNT_CENTS = 150;
+
 function getConfig() {
   const env = loadEnv();
   const baseUrl =
@@ -45,6 +48,42 @@ async function squareFetch(path, options = {}) {
     throw err;
   }
   return res.json();
+}
+
+async function findOrderByIdInRecentSearch(orderId, locationId) {
+  const now = new Date();
+  const since = new Date(now.getTime() - 1000 * 60 * 60 * 24 * 30);
+  let cursor = null;
+  for (let page = 0; page < 8; page += 1) {
+    const body = {
+      location_ids: [locationId],
+      limit: 100,
+      query: {
+        filter: {
+          date_time_filter: {
+            created_at: {
+              start_at: since.toISOString(),
+              end_at: now.toISOString(),
+            },
+          },
+        },
+        sort: {
+          sort_field: 'CREATED_AT',
+          sort_order: 'DESC',
+        },
+      },
+      ...(cursor && { cursor }),
+    };
+    const data = await squareFetch('/v2/orders/search', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+    const found = (data?.orders || []).find((o) => o?.id === orderId);
+    if (found) return found;
+    cursor = data?.cursor || null;
+    if (!cursor) break;
+  }
+  return null;
 }
 
 async function listCatalogPage(cursor = null) {
@@ -425,15 +464,110 @@ function buildCheckoutOrderNote(meta = {}) {
   if (meta.customerName) parts.push(`Cliente: ${meta.customerName}`);
   if (meta.customerPhone) parts.push(`Tel: ${meta.customerPhone}`);
   if (meta.customerEmail) parts.push(`Email: ${meta.customerEmail}`);
+  if (meta.fulfillmentType === 'delivery') parts.push('Entrega: delivery');
+  if (meta.fulfillmentType === 'pickup') parts.push('Entrega: retirada no local');
   if (meta.orderNote) parts.push(`Obs: ${meta.orderNote}`);
   if (parts.length === 0) return '';
   return parts.join(' | ');
 }
 
+function buildSquareFulfillment(checkoutMeta = {}, forcedType) {
+  const normalizedForcedType = forcedType === 'delivery'
+    ? 'delivery'
+    : forcedType === 'pickup'
+      ? 'pickup'
+      : forcedType === 'shipment'
+        ? 'shipment'
+        : null;
+  const type = normalizedForcedType || (checkoutMeta.fulfillmentType === 'delivery' ? 'delivery' : 'pickup');
+  if (type === 'delivery') {
+    // Square: o padrão de schedule_type é SCHEDULED (exige deliver_at). Sem ASAP + prep_time_duration
+    // o pedido pode ser criado de forma inválida e o checkout hospedado falha ao pagar.
+    // @see https://developer.squareup.com/reference/square/objects/OrderFulfillmentDeliveryDetails
+    const name = String(checkoutMeta.customerName || '').trim() || 'Customer';
+    const phone = String(checkoutMeta.customerPhone || '').trim();
+    const stateRegion = String(checkoutMeta.deliveryState || '').trim();
+    return [
+      {
+        type: 'DELIVERY',
+        state: 'PROPOSED',
+        delivery_details: {
+          schedule_type: 'ASAP',
+          prep_time_duration: 'PT30M',
+          recipient: {
+            display_name: name,
+            ...(phone && { phone_number: phone }),
+            ...(checkoutMeta.customerEmail?.trim() && {
+              email_address: checkoutMeta.customerEmail.trim(),
+            }),
+            address: {
+              address_line_1: checkoutMeta.deliveryAddressLine1,
+              address_line_2: checkoutMeta.deliveryAddressLine2 || undefined,
+              locality: checkoutMeta.deliveryCity,
+              ...(stateRegion && {
+                administrative_district_level_1: stateRegion,
+              }),
+              postal_code: checkoutMeta.deliveryPostalCode,
+              country: 'US',
+            },
+          },
+        },
+      },
+    ];
+  }
+  if (type === 'shipment') {
+    const name = String(checkoutMeta.customerName || '').trim() || 'Customer';
+    const phone = String(checkoutMeta.customerPhone || '').trim();
+    const stateRegion = String(checkoutMeta.deliveryState || '').trim();
+    return [
+      {
+        type: 'SHIPMENT',
+        state: 'PROPOSED',
+        shipment_details: {
+          recipient: {
+            display_name: name,
+            ...(phone && { phone_number: phone }),
+            ...(checkoutMeta.customerEmail?.trim() && {
+              email_address: checkoutMeta.customerEmail.trim(),
+            }),
+            address: {
+              address_line_1: checkoutMeta.deliveryAddressLine1,
+              address_line_2: checkoutMeta.deliveryAddressLine2 || undefined,
+              locality: checkoutMeta.deliveryCity,
+              ...(stateRegion && {
+                administrative_district_level_1: stateRegion,
+              }),
+              postal_code: checkoutMeta.deliveryPostalCode,
+              country: 'US',
+            },
+          },
+        },
+      },
+    ];
+  }
+
+  return [
+    {
+      type: 'PICKUP',
+      state: 'PROPOSED',
+      pickup_details: {
+        recipient: {
+          display_name: checkoutMeta.customerName || undefined,
+          phone_number: checkoutMeta.customerPhone || undefined,
+          email_address: checkoutMeta.customerEmail || undefined,
+        },
+      },
+    },
+  ];
+}
+
 /**
  * Monta line_items + note para Orders API e Checkout API (Payment Link).
  */
-function buildSquareOrderInner(validatedItems, checkoutMeta = {}) {
+function buildSquareOrderInner(validatedItems, checkoutMeta = {}, options = {}) {
+  const includeFulfillment = options.includeFulfillment !== false;
+  const forcedFulfillmentType = options.forcedFulfillmentType;
+  const salesTaxUid = 'sales-tax-6pct';
   const lineItems = validatedItems.map((i) => {
     const { name, price, quantity, observation } = sanitizeOrderItem(i);
     return {
@@ -443,19 +577,41 @@ function buildSquareOrderInner(validatedItems, checkoutMeta = {}) {
         amount: Math.round(price * 100),
         currency: 'USD',
       },
+      applied_taxes: [{ tax_uid: salesTaxUid }],
       ...(observation && { note: observation }),
     };
   });
   const orderNote = buildCheckoutOrderNote(checkoutMeta).slice(0, 500);
   return {
     line_items: lineItems,
+    taxes: [
+      {
+        uid: salesTaxUid,
+        name: 'Sales Tax',
+        percentage: ORDER_TAX_PERCENTAGE,
+        scope: 'ORDER',
+      },
+    ],
+    service_charges: [
+      {
+        name: 'Service Fee',
+        amount_money: {
+          amount: SERVICE_FEE_AMOUNT_CENTS,
+          currency: 'USD',
+        },
+        calculation_phase: 'SUBTOTAL_PHASE',
+      },
+    ],
+    ...(includeFulfillment && {
+      fulfillments: buildSquareFulfillment(checkoutMeta, forcedFulfillmentType),
+    }),
     ...(orderNote && { note: orderNote }),
   };
 }
 
 export async function createOrder(validatedItems, checkoutMeta = {}) {
   const { locationId } = getConfig();
-  const inner = buildSquareOrderInner(validatedItems, checkoutMeta);
+  const inner = buildSquareOrderInner(validatedItems, checkoutMeta, { includeFulfillment: true });
   const body = {
     idempotency_key: crypto.randomUUID(),
     order: {
@@ -487,7 +643,15 @@ export async function createCheckoutPaymentLink(
     err.statusCode = 500;
     throw err;
   }
-  const inner = buildSquareOrderInner(validatedItems, checkoutMeta);
+  // Hosted checkout: delivery deve seguir fluxo de envio (SHIPMENT), que é o
+  // formato esperado para roteamento de entrega (ex.: DoorDash) na Square.
+  const includeHostedFulfillment = true;
+  const hostedFulfillmentType =
+    checkoutMeta.fulfillmentType === 'delivery' ? 'shipment' : 'pickup';
+  const inner = buildSquareOrderInner(validatedItems, checkoutMeta, {
+    includeFulfillment: includeHostedFulfillment,
+    forcedFulfillmentType: hostedFulfillmentType,
+  });
   const body = {
     idempotency_key: crypto.randomUUID(),
     order: {
@@ -496,10 +660,13 @@ export async function createCheckoutPaymentLink(
     },
     checkout_options: {
       redirect_url: url,
+      // Exibe seleção de gorjeta no checkout hospedado da Square.
+      allow_tipping: true,
     },
   };
   const email = checkoutMeta.customerEmail?.trim();
-  if (email) {
+  const hasFulfillments = Array.isArray(body.order?.fulfillments) && body.order.fulfillments.length > 0;
+  if (email && !hasFulfillments) {
     body.pre_populated_data = { buyer_email: email };
   }
 
@@ -508,7 +675,9 @@ export async function createCheckoutPaymentLink(
     body: JSON.stringify(body),
   });
   const pl = data.payment_link;
-  const checkoutUrl = pl?.long_url || pl?.url || '';
+  // Prefere a URL curta oficial (square.link), que tende a ser mais robusta
+  // para redirecionamento em navegadores/dispositivos diferentes.
+  const checkoutUrl = pl?.url || pl?.long_url || '';
   const orderId =
     pl?.order_id ||
     data.related_resources?.orders?.[0]?.id ||
@@ -585,4 +754,244 @@ export async function cancelOrder(orderId) {
     method: 'POST',
     body: JSON.stringify(body),
   });
+}
+
+function mapSquarePaymentStatusToClient(status) {
+  const normalized = String(status || '').toUpperCase();
+  if (normalized === 'COMPLETED' || normalized === 'CAPTURED') return 'paid';
+  if (normalized === 'APPROVED') return 'authorized';
+  if (normalized === 'PENDING') return 'pending';
+  if (normalized === 'FAILED') return 'failed';
+  if (normalized === 'CANCELED') return 'canceled';
+  return 'unknown';
+}
+
+/** Pagamento efetivamente liquidado (API Payments ou tender no pedido). */
+function isPaymentEffectivelyCaptured(squarePaymentStatus, order) {
+  const raw =
+    squarePaymentStatus ?? order?.tenders?.[0]?.card_details?.status ?? null;
+  const normalized = String(raw || '').toUpperCase();
+  return normalized === 'COMPLETED' || normalized === 'CAPTURED';
+}
+
+/**
+ * Combina fulfillment + pagamento. Na UI da Square, "Ready" corresponde a PREPARED;
+ * antes estávamos tratando PREPARED como in_progress e fazendo fulfillment "ganhar"
+ * sobre o pagamento COMPLETED/CAPTURED.
+ */
+function resolveClientStatusFromOrder(order, squarePaymentStatus) {
+  const ff = String(order?.fulfillments?.[0]?.state || '').toUpperCase();
+
+  switch (ff) {
+    case 'CANCELED':
+    case 'FAILED':
+      return 'canceled';
+    case 'COMPLETED':
+    case 'PREPARED':
+      return 'paid';
+    case 'RESERVED':
+    case 'PROPOSED': {
+      if (isPaymentEffectivelyCaptured(squarePaymentStatus, order)) return 'in_progress';
+      const state = String(order?.state || '').toUpperCase();
+      if (state === 'CANCELED') return 'canceled';
+      if (state === 'DRAFT') return 'pending';
+      return 'pending';
+    }
+    default:
+      break;
+  }
+
+  const fromApi = mapSquarePaymentStatusToClient(squarePaymentStatus);
+  if (fromApi !== 'unknown') return fromApi;
+
+  const cardStatus = order?.tenders?.[0]?.card_details?.status ?? null;
+  const upperCard = String(cardStatus || '').toUpperCase();
+  if (upperCard === 'CAPTURED') return 'paid';
+  if (upperCard === 'AUTHORIZED') return 'authorized';
+  if (upperCard === 'FAILED') return 'failed';
+  if (upperCard === 'VOIDED') return 'canceled';
+
+  const state = String(order?.state || '').toUpperCase();
+  if (state === 'OPEN') return 'paid';
+  if (state === 'DRAFT') return 'pending';
+  if (state === 'CANCELED') return 'canceled';
+  if (state === 'COMPLETED') return 'paid';
+
+  return 'unknown';
+}
+
+function normalizeLookupText(value) {
+  return String(value ?? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+}
+
+function extractOrderLookupText(order) {
+  const recipient =
+    order?.fulfillments?.[0]?.pickup_details?.recipient ||
+    order?.fulfillments?.[0]?.delivery_details?.recipient ||
+    {};
+  return normalizeLookupText(
+    [order?.note, recipient?.display_name, recipient?.email_address, recipient?.phone_number]
+      .filter(Boolean)
+      .join(' | ')
+  );
+}
+
+function deriveStatusFromOrder(order) {
+  const cardStatus = order?.tenders?.[0]?.card_details?.status ?? null;
+  const status = resolveClientStatusFromOrder(order, null);
+  return { status, paymentStatus: cardStatus };
+}
+
+/**
+ * Busca o status do pedido/pagamento diretamente na Square.
+ * Útil para o frontend acompanhar o pós-pagamento sem estado local no servidor.
+ */
+export async function getOrderPaymentStatus(orderId) {
+  if (!orderId || typeof orderId !== 'string') {
+    const err = new Error('orderId inválido.');
+    err.statusCode = 400;
+    throw err;
+  }
+  const { locationId } = getConfig();
+  let resolvedOrderId = orderId;
+  let order;
+  try {
+    const orderData = await squareFetch(`/v2/orders/${encodeURIComponent(orderId)}`);
+    order = orderData?.order;
+  } catch (err) {
+    // Fallback: alguns fluxos devolvem checkoutId/paymentLinkId na URL.
+    // Tentamos resolver para order_id via Checkout API.
+    try {
+      const paymentLinkData = await squareFetch(
+        `/v2/online-checkout/payment-links/${encodeURIComponent(orderId)}`
+      );
+      const fromPaymentLink = paymentLinkData?.payment_link?.order_id;
+      if (!fromPaymentLink) {
+        throw err;
+      }
+      const orderData = await squareFetch(`/v2/orders/${encodeURIComponent(fromPaymentLink)}`);
+      order = orderData?.order;
+      resolvedOrderId = fromPaymentLink;
+    } catch {
+      // Fallback final: alguns pedidos aparecem no Search mas falham no Retrieve.
+      const recovered = await findOrderByIdInRecentSearch(resolvedOrderId, locationId);
+      if (!recovered) throw err;
+      order = recovered;
+    }
+  }
+  if (!order?.id) {
+    const recovered = await findOrderByIdInRecentSearch(resolvedOrderId, locationId);
+    if (!recovered?.id) {
+      const err = new Error('Pedido não encontrado na Square.');
+      err.statusCode = 404;
+      throw err;
+    }
+    order = recovered;
+  }
+
+  let payment = null;
+  let paymentStatus = null;
+  try {
+    const paymentsData = await squareFetch('/v2/payments/search', {
+      method: 'POST',
+      body: JSON.stringify({
+        query: {
+          filter: {
+            order_ids: [resolvedOrderId],
+          },
+        },
+        limit: 1,
+        sort: {
+          sort_field: 'CREATED_AT',
+          sort_order: 'DESC',
+        },
+      }),
+    });
+    payment = paymentsData?.payments?.[0] ?? null;
+    paymentStatus = payment?.status ?? null;
+  } catch {
+    // Alguns pedidos já trazem tender completo no retrieve do pedido.
+    // Se SearchPayments falhar, seguimos com fallback sem quebrar o status.
+    const tender = order?.tenders?.[0] ?? null;
+    payment = tender
+      ? {
+          id: tender.payment_id ?? tender.id ?? null,
+          status: tender.card_details?.status ?? null,
+          updated_at: tender.created_at ?? null,
+        }
+      : null;
+    paymentStatus = payment?.status ?? null;
+  }
+  const finalStatus = resolveClientStatusFromOrder(order, paymentStatus);
+  return {
+    orderId: order.id,
+    orderState: order.state ?? null,
+    createdAt: order?.created_at ?? null,
+    paymentId: payment?.id ?? null,
+    paymentStatus,
+    status: finalStatus,
+    updatedAt: payment?.updated_at ?? order?.updated_at ?? null,
+  };
+}
+
+/**
+ * Busca pedidos recentes por nome/e-mail no conteúdo do pedido.
+ * Útil para recuperar order_id quando o cliente não o possui.
+ */
+export async function lookupOrdersByCustomer({ name, email, limit = 8 } = {}) {
+  const normalizedName = normalizeLookupText(name);
+  const normalizedEmail = normalizeLookupText(email);
+  if (!normalizedName && !normalizedEmail) {
+    const err = new Error('Informe nome ou e-mail para buscar pedidos.');
+    err.statusCode = 400;
+    throw err;
+  }
+  const { locationId } = getConfig();
+  const now = new Date();
+  const since = new Date(now.getTime() - 1000 * 60 * 60 * 24 * 30); // 30 dias
+  const data = await squareFetch('/v2/orders/search', {
+    method: 'POST',
+    body: JSON.stringify({
+      location_ids: [locationId],
+      limit: Math.min(Math.max(Number(limit) || 8, 1), 20),
+      query: {
+        filter: {
+          date_time_filter: {
+            created_at: {
+              start_at: since.toISOString(),
+              end_at: now.toISOString(),
+            },
+          },
+        },
+        sort: {
+          sort_field: 'CREATED_AT',
+          sort_order: 'DESC',
+        },
+      },
+    }),
+  });
+  const matches = (data?.orders || []).filter((o) => {
+    const hay = extractOrderLookupText(o);
+    if (!hay) return false;
+    const nameOk = normalizedName ? hay.includes(normalizedName) : true;
+    const emailOk = normalizedEmail ? hay.includes(normalizedEmail) : true;
+    return nameOk && emailOk;
+  });
+
+  const enriched = matches.slice(0, 8).map((o) => {
+    const derived = deriveStatusFromOrder(o);
+    return {
+      orderId: o.id,
+      createdAt: o.created_at ?? null,
+      orderState: o.state ?? null,
+      fulfillmentType: o.fulfillments?.[0]?.type ?? null,
+      status: derived.status,
+      paymentStatus: derived.paymentStatus,
+    };
+  });
+  return enriched;
 }

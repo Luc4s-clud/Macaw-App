@@ -8,6 +8,8 @@ import { useSquareCardPayments } from '../hooks/useSquareCardPayments';
 import { squareCheckoutMode } from '../config/env';
 
 const PENDING_ORDER_KEY = 'macaw_pending_square_order';
+const SALES_TAX_RATE = 0.06;
+const SERVICE_FEE = 1.5;
 
 function CheckoutPage() {
   const navigate = useNavigate();
@@ -23,11 +25,20 @@ function CheckoutPage() {
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
+  const [fulfillmentType, setFulfillmentType] = useState<'delivery' | 'pickup'>('pickup');
+  const [deliveryAddressLine1, setDeliveryAddressLine1] = useState('');
+  const [deliveryAddressLine2, setDeliveryAddressLine2] = useState('');
+  const [deliveryCity, setDeliveryCity] = useState('');
+  const [deliveryState, setDeliveryState] = useState('');
+  const [deliveryPostalCode, setDeliveryPostalCode] = useState('');
   const [orderNote, setOrderNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [orderId, setOrderId] = useState<string | null>(null);
   const [paymentId, setPaymentId] = useState<string | null>(null);
+  const [publicOrderCode, setPublicOrderCode] = useState<string | null>(null);
+  const salesTax = Number((total * SALES_TAX_RATE).toFixed(2));
+  const finalTotal = Number((total + salesTax + SERVICE_FEE).toFixed(2));
 
   useEffect(() => {
     if (items.length === 0 && !orderId) {
@@ -46,6 +57,16 @@ function CheckoutPage() {
     const phone = customerPhone.trim();
     if (!name || !phone) {
       setError('Please enter your name and phone number.');
+      return;
+    }
+    if (
+      fulfillmentType === 'delivery' &&
+      (!deliveryAddressLine1.trim() ||
+        !deliveryCity.trim() ||
+        !deliveryState.trim() ||
+        !deliveryPostalCode.trim())
+    ) {
+      setError('Please fill delivery address, city, state (2 letters) and ZIP code.');
       return;
     }
     if (!hostedCheckout && squarePayConfigured && !squareCardReady) {
@@ -71,6 +92,14 @@ function CheckoutPage() {
         customerName: name,
         customerPhone: phone,
         ...(customerEmail.trim() && { customerEmail: customerEmail.trim() }),
+        fulfillmentType,
+        ...(fulfillmentType === 'delivery' && {
+          deliveryAddressLine1: deliveryAddressLine1.trim(),
+          deliveryAddressLine2: deliveryAddressLine2.trim(),
+          deliveryCity: deliveryCity.trim(),
+          deliveryState: deliveryState.trim().toUpperCase().slice(0, 2),
+          deliveryPostalCode: deliveryPostalCode.trim(),
+        }),
         ...(orderNote.trim() && { orderNote: orderNote.trim() }),
         ...(paymentSourceId && { paymentSourceId }),
         ...(hostedCheckout && { hostedCheckout: true }),
@@ -78,7 +107,15 @@ function CheckoutPage() {
 
       if (hostedCheckout && res.checkoutUrl) {
         try {
-          sessionStorage.setItem(PENDING_ORDER_KEY, res.orderId);
+          sessionStorage.setItem(
+            PENDING_ORDER_KEY,
+            JSON.stringify({
+              orderId: res.orderId,
+              publicOrderCode: res.publicOrderCode ?? null,
+              paymentLinkId: res.paymentLinkId ?? null,
+              checkoutUrl: res.checkoutUrl,
+            })
+          );
         } catch {
           /* ignore */
         }
@@ -87,6 +124,7 @@ function CheckoutPage() {
       }
 
       setOrderId(res.orderId);
+      setPublicOrderCode(res.publicOrderCode ?? null);
       setPaymentId(res.paymentId ?? null);
       clear();
     } catch (err) {
@@ -110,7 +148,9 @@ function CheckoutPage() {
         </h1>
         <p className="text-slate-600">
           Thank you! Your order number is{' '}
-          <span className="font-mono font-semibold text-primaryDark">{orderId}</span>
+          <span className="font-mono font-semibold text-primaryDark">
+            {publicOrderCode || orderId}
+          </span>
         </p>
         {paymentId && (
           <p className="text-sm text-slate-600">
@@ -171,8 +211,20 @@ function CheckoutPage() {
             ))}
           </div>
           <div className="flex justify-between items-center text-lg font-semibold text-primaryDark pt-2 border-t border-slate-200">
-            <span>Total</span>
+            <span>Subtotal</span>
             <span>$ {total.toFixed(2)}</span>
+          </div>
+          <div className="flex justify-between items-center text-sm text-slate-700">
+            <span>Sales tax (6%)</span>
+            <span>$ {salesTax.toFixed(2)}</span>
+          </div>
+          <div className="flex justify-between items-center text-sm text-slate-700">
+            <span>Service fee</span>
+            <span>$ {SERVICE_FEE.toFixed(2)}</span>
+          </div>
+          <div className="flex justify-between items-center text-lg font-semibold text-primaryDark pt-2 border-t border-slate-200">
+            <span>Order total</span>
+            <span>$ {finalTotal.toFixed(2)}</span>
           </div>
         </div>
 
@@ -211,6 +263,114 @@ function CheckoutPage() {
               className={inputClass}
             />
           </div>
+          <div>
+            <label className={labelClass}>
+              Fulfillment <span className="text-red-600">*</span>
+            </label>
+            <div className="grid grid-cols-2 gap-2 rounded-xl border border-slate-200 bg-slate-50 p-1">
+              <button
+                type="button"
+                onClick={() => setFulfillmentType('pickup')}
+                className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                  fulfillmentType === 'pickup'
+                    ? 'bg-white text-slate-900 shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Pick up
+              </button>
+              <button
+                type="button"
+                onClick={() => setFulfillmentType('delivery')}
+                className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                  fulfillmentType === 'delivery'
+                    ? 'bg-white text-slate-900 shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Delivery
+              </button>
+            </div>
+          </div>
+          {fulfillmentType === 'delivery' && (
+            <>
+              <div>
+                <label htmlFor="co-address-1" className={labelClass}>
+                  Address line 1 <span className="text-red-600">*</span>
+                </label>
+                <input
+                  id="co-address-1"
+                  type="text"
+                  autoComplete="address-line1"
+                  required
+                  value={deliveryAddressLine1}
+                  onChange={(e) => setDeliveryAddressLine1(e.target.value)}
+                  className={inputClass}
+                />
+              </div>
+              <div>
+                <label htmlFor="co-address-2" className={labelClass}>
+                  Address line 2 (optional)
+                </label>
+                <input
+                  id="co-address-2"
+                  type="text"
+                  autoComplete="address-line2"
+                  value={deliveryAddressLine2}
+                  onChange={(e) => setDeliveryAddressLine2(e.target.value)}
+                  className={inputClass}
+                />
+              </div>
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="sm:col-span-1">
+                  <label htmlFor="co-city" className={labelClass}>
+                    City <span className="text-red-600">*</span>
+                  </label>
+                  <input
+                    id="co-city"
+                    type="text"
+                    autoComplete="address-level2"
+                    required
+                    value={deliveryCity}
+                    onChange={(e) => setDeliveryCity(e.target.value)}
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="co-state" className={labelClass}>
+                    State <span className="text-red-600">*</span>
+                  </label>
+                  <input
+                    id="co-state"
+                    type="text"
+                    autoComplete="address-level1"
+                    required
+                    maxLength={2}
+                    placeholder="FL"
+                    value={deliveryState}
+                    onChange={(e) =>
+                      setDeliveryState(e.target.value.replace(/[^a-zA-Z]/g, '').slice(0, 2))
+                    }
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="co-zip" className={labelClass}>
+                    ZIP code <span className="text-red-600">*</span>
+                  </label>
+                  <input
+                    id="co-zip"
+                    type="text"
+                    autoComplete="postal-code"
+                    required
+                    value={deliveryPostalCode}
+                    onChange={(e) => setDeliveryPostalCode(e.target.value)}
+                    className={inputClass}
+                  />
+                </div>
+              </div>
+            </>
+          )}
           <div>
             <label htmlFor="co-email" className={labelClass}>
               Email (optional)
@@ -286,10 +446,10 @@ function CheckoutPage() {
                     ? 'Processing payment…'
                     : 'Placing order…'
                 : hostedCheckout
-                  ? `Continue to pay $ ${total.toFixed(2)}`
+                  ? `Continue to pay $ ${finalTotal.toFixed(2)}`
                   : squarePayConfigured
-                    ? `Pay $ ${total.toFixed(2)}`
-                    : `Place order · $ ${total.toFixed(2)}`}
+                    ? `Pay $ ${finalTotal.toFixed(2)}`
+                    : `Place order · $ ${finalTotal.toFixed(2)}`}
             </button>
             <Link
               to="/menu"

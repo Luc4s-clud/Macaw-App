@@ -12,6 +12,11 @@ export function createApp() {
   const env = loadEnv();
   const app = express();
 
+  // Atrás de nginx/Cloudflare o header X-Forwarded-For vem preenchido; sem isso o
+  // express-rate-limit lança ERR_ERL_UNEXPECTED_X_FORWARDED_FOR (v7+).
+  // `1` = confiar no primeiro hop (um proxy reverso).
+  app.set('trust proxy', 1);
+
   app.use(
     '/api/webhooks/square',
     express.raw({ type: 'application/json' }),

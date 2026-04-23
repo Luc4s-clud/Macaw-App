@@ -4,11 +4,14 @@
  */
 
 export { getMenu, prefetchMenu } from './menu';
-export { createOrder } from './orders';
+export { createOrder, getOrderStatus, lookupOrdersByCustomer } from './orders';
 export { ApiError } from './client';
 export type {
   ApiMenuItem,
   CreateOrderItemInput,
   CreateOrderResponse,
+  OrderLookupItem,
+  OrderLookupResponse,
+  OrderStatusResponse,
   MenuResponse,
 } from './types';
