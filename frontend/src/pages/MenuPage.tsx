@@ -8,6 +8,13 @@ import CategorySidebar from '../components/CategorySidebar';
 import { buildMenuCategories } from '../utils/menuCategories';
 import { MENU_IMAGE_PRIORITY_COUNT } from '../utils/menuImagePreload';
 
+const DOORDASH_STORE_URL =
+  'https://www.doordash.com/store/34592142?utm_source=mx_share&aw=eBQoi5Vv2wtWXSdq';
+const UBER_EATS_STORE_URL =
+  'https://www.ubereats.com/store-browse-uuid/9c6f9c55-08b1-5b2f-a082-499cbc9d0677?diningMode=DELIVERY';
+const DOORDASH_LOGO_URL = '/pictures/logodoordash.png';
+const UBER_EATS_LOGO_URL = '/pictures/logoubereats.png';
+
 function apiItemToProduct(m: ApiMenuItem): Product {
   return {
     id: m.id,
@@ -103,8 +110,9 @@ interface Props {
 
 function MenuPage({ onItemAddedToCart }: Props) {
   const [menuItems, setMenuItems] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [orderType, setOrderType] = useState<'pickup' | 'delivery' | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [selected, setSelected] = useState<Product | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -113,7 +121,9 @@ function MenuPage({ onItemAddedToCart }: Props) {
   const categories = useMemo(() => buildMenuCategories(menuItems), [menuItems]);
 
   useEffect(() => {
+    if (orderType !== 'pickup') return undefined;
     let cancelled = false;
+    setLoading(true);
     getMenu()
       .then((items) => {
         if (cancelled) return;
@@ -138,7 +148,7 @@ function MenuPage({ onItemAddedToCart }: Props) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [orderType]);
 
   useEffect(() => {
     setMenuVisible(false);
@@ -166,7 +176,7 @@ function MenuPage({ onItemAddedToCart }: Props) {
     setModalOpen(true);
   }
 
-  if (loading) {
+  if (orderType === 'pickup' && loading) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-slate-500">
         <p className="text-lg">Carregando menu...</p>
@@ -174,7 +184,7 @@ function MenuPage({ onItemAddedToCart }: Props) {
     );
   }
 
-  if (error) {
+  if (orderType === 'pickup' && error) {
     return (
       <div className="rounded-2xl bg-amber-50 border border-amber-200 p-6 text-center">
         <p className="font-semibold text-amber-800">Não foi possível carregar o menu</p>
@@ -188,10 +198,85 @@ function MenuPage({ onItemAddedToCart }: Props) {
 
   return (
     <div
-      className={`transition-all duration-500 ease-out ${
-        menuVisible ? 'translate-y-0 opacity-100' : 'translate-y-3 opacity-0'
+      className={`transition-opacity duration-500 ease-out ${
+        menuVisible ? 'opacity-100' : 'opacity-0'
       }`}
     >
+      {orderType === null && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/45 p-4 backdrop-blur-[1px]">
+          <div className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+            <h2 className="font-display text-2xl font-semibold text-slate-900">How do you want to order?</h2>
+            <p className="mt-2 text-sm text-slate-600">
+              Choose pickup to order directly on this website, or delivery to continue with our
+              partners.
+            </p>
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => setOrderType('pickup')}
+                className="rounded-full bg-primary px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-primaryDark"
+              >
+                Pickup
+              </button>
+              <button
+                type="button"
+                onClick={() => setOrderType('delivery')}
+                className="rounded-full border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-800 transition-colors hover:bg-slate-50"
+              >
+                Delivery
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {orderType === 'delivery' && (
+        <section className="mx-auto mb-5 max-w-2xl rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h2 className="font-display text-2xl font-semibold text-slate-900">Delivery</h2>
+          <p className="mt-2 text-sm text-slate-600">
+            Continue your delivery order through DoorDash or Uber Eats.
+          </p>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <a
+              href={DOORDASH_STORE_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center justify-center gap-2 rounded-full bg-[#FF3008] px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+            >
+              <img
+                src={DOORDASH_LOGO_URL}
+                alt=""
+                aria-hidden="true"
+                className="h-5 w-5 rounded object-cover"
+              />
+              Order on DoorDash
+            </a>
+            <a
+              href={UBER_EATS_STORE_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center justify-center gap-2 rounded-full bg-black px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+            >
+              <img
+                src={UBER_EATS_LOGO_URL}
+                alt=""
+                aria-hidden="true"
+                className="h-5 w-5 rounded object-cover"
+              />
+              Order on Uber Eats
+            </a>
+          </div>
+          <button
+            type="button"
+            onClick={() => setOrderType('pickup')}
+            className="mt-4 rounded-full border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            Switch to Pickup
+          </button>
+        </section>
+      )}
+
+      {orderType !== 'pickup' ? null : (
       <div className="flex flex-col md:flex-row items-stretch md:items-start gap-3 md:gap-6 lg:gap-10">
         <CategorySidebar
           categories={categories.length > 0 ? categories : undefined}
@@ -233,13 +318,16 @@ function MenuPage({ onItemAddedToCart }: Props) {
           </div>
         </div>
       </div>
+      )}
 
-      <ProductModal
-        product={selected}
-        open={modalOpen}
-        onClose={() => setModalOpen(false)}
-        onAddedToCart={onItemAddedToCart}
-      />
+      {orderType === 'pickup' && (
+        <ProductModal
+          product={selected}
+          open={modalOpen}
+          onClose={() => setModalOpen(false)}
+          onAddedToCart={onItemAddedToCart}
+        />
+      )}
     </div>
   );
 }

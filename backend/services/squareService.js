@@ -643,8 +643,8 @@ export async function createCheckoutPaymentLink(
     err.statusCode = 500;
     throw err;
   }
-  // Hosted checkout: delivery deve seguir fluxo de envio (SHIPMENT), que é o
-  // formato esperado para roteamento de entrega (ex.: DoorDash) na Square.
+  // Hosted checkout: delivery segue fluxo de envio (SHIPMENT), que é o
+  // formato aceito nesse checkout e usado para roteamento na Square.
   const includeHostedFulfillment = true;
   const hostedFulfillmentType =
     checkoutMeta.fulfillmentType === 'delivery' ? 'shipment' : 'pickup';

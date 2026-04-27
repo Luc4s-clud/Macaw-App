@@ -25,12 +25,6 @@ function CheckoutPage() {
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
-  const [fulfillmentType, setFulfillmentType] = useState<'delivery' | 'pickup'>('pickup');
-  const [deliveryAddressLine1, setDeliveryAddressLine1] = useState('');
-  const [deliveryAddressLine2, setDeliveryAddressLine2] = useState('');
-  const [deliveryCity, setDeliveryCity] = useState('');
-  const [deliveryState, setDeliveryState] = useState('');
-  const [deliveryPostalCode, setDeliveryPostalCode] = useState('');
   const [orderNote, setOrderNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -59,16 +53,6 @@ function CheckoutPage() {
       setError('Please enter your name and phone number.');
       return;
     }
-    if (
-      fulfillmentType === 'delivery' &&
-      (!deliveryAddressLine1.trim() ||
-        !deliveryCity.trim() ||
-        !deliveryState.trim() ||
-        !deliveryPostalCode.trim())
-    ) {
-      setError('Please fill delivery address, city, state (2 letters) and ZIP code.');
-      return;
-    }
     if (!hostedCheckout && squarePayConfigured && !squareCardReady) {
       setError('Wait for the card form to load, then try again.');
       return;
@@ -92,14 +76,7 @@ function CheckoutPage() {
         customerName: name,
         customerPhone: phone,
         ...(customerEmail.trim() && { customerEmail: customerEmail.trim() }),
-        fulfillmentType,
-        ...(fulfillmentType === 'delivery' && {
-          deliveryAddressLine1: deliveryAddressLine1.trim(),
-          deliveryAddressLine2: deliveryAddressLine2.trim(),
-          deliveryCity: deliveryCity.trim(),
-          deliveryState: deliveryState.trim().toUpperCase().slice(0, 2),
-          deliveryPostalCode: deliveryPostalCode.trim(),
-        }),
+        fulfillmentType: 'pickup',
         ...(orderNote.trim() && { orderNote: orderNote.trim() }),
         ...(paymentSourceId && { paymentSourceId }),
         ...(hostedCheckout && { hostedCheckout: true }),
@@ -264,114 +241,6 @@ function CheckoutPage() {
             />
           </div>
           <div>
-            <label className={labelClass}>
-              Fulfillment <span className="text-red-600">*</span>
-            </label>
-            <div className="grid grid-cols-2 gap-2 rounded-xl border border-slate-200 bg-slate-50 p-1">
-              <button
-                type="button"
-                onClick={() => setFulfillmentType('pickup')}
-                className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                  fulfillmentType === 'pickup'
-                    ? 'bg-white text-slate-900 shadow-sm'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                Pick up
-              </button>
-              <button
-                type="button"
-                onClick={() => setFulfillmentType('delivery')}
-                className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                  fulfillmentType === 'delivery'
-                    ? 'bg-white text-slate-900 shadow-sm'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                Delivery
-              </button>
-            </div>
-          </div>
-          {fulfillmentType === 'delivery' && (
-            <>
-              <div>
-                <label htmlFor="co-address-1" className={labelClass}>
-                  Address line 1 <span className="text-red-600">*</span>
-                </label>
-                <input
-                  id="co-address-1"
-                  type="text"
-                  autoComplete="address-line1"
-                  required
-                  value={deliveryAddressLine1}
-                  onChange={(e) => setDeliveryAddressLine1(e.target.value)}
-                  className={inputClass}
-                />
-              </div>
-              <div>
-                <label htmlFor="co-address-2" className={labelClass}>
-                  Address line 2 (optional)
-                </label>
-                <input
-                  id="co-address-2"
-                  type="text"
-                  autoComplete="address-line2"
-                  value={deliveryAddressLine2}
-                  onChange={(e) => setDeliveryAddressLine2(e.target.value)}
-                  className={inputClass}
-                />
-              </div>
-              <div className="grid gap-3 sm:grid-cols-3">
-                <div className="sm:col-span-1">
-                  <label htmlFor="co-city" className={labelClass}>
-                    City <span className="text-red-600">*</span>
-                  </label>
-                  <input
-                    id="co-city"
-                    type="text"
-                    autoComplete="address-level2"
-                    required
-                    value={deliveryCity}
-                    onChange={(e) => setDeliveryCity(e.target.value)}
-                    className={inputClass}
-                  />
-                </div>
-                <div>
-                  <label htmlFor="co-state" className={labelClass}>
-                    State <span className="text-red-600">*</span>
-                  </label>
-                  <input
-                    id="co-state"
-                    type="text"
-                    autoComplete="address-level1"
-                    required
-                    maxLength={2}
-                    placeholder="FL"
-                    value={deliveryState}
-                    onChange={(e) =>
-                      setDeliveryState(e.target.value.replace(/[^a-zA-Z]/g, '').slice(0, 2))
-                    }
-                    className={inputClass}
-                  />
-                </div>
-                <div>
-                  <label htmlFor="co-zip" className={labelClass}>
-                    ZIP code <span className="text-red-600">*</span>
-                  </label>
-                  <input
-                    id="co-zip"
-                    type="text"
-                    autoComplete="postal-code"
-                    required
-                    value={deliveryPostalCode}
-                    onChange={(e) => setDeliveryPostalCode(e.target.value)}
-                    className={inputClass}
-                  />
-                </div>
-              </div>
-            </>
-          )}
-          <div>
             <label htmlFor="co-email" className={labelClass}>
               Email (optional)
             </label>
@@ -399,7 +268,6 @@ function CheckoutPage() {
             />
             <p className="text-xs text-slate-500 mt-1">{orderNote.length}/500</p>
           </div>
-
           {!hostedCheckout && squarePayConfigured && (
             <div className="space-y-2 pt-2 border-t border-slate-100">
               <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
