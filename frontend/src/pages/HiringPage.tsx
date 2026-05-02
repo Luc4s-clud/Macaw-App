@@ -1,6 +1,13 @@
 import { useState } from 'react';
+import { toast } from 'sonner';
+import { apiBaseUrl } from '../config/env';
+import { submitHiringApplication } from '../services/api/hiring';
+import { ApiError } from '../services/api/client';
 
 function HiringPage() {
+  const [submitting, setSubmitting] = useState(false);
+  const [resumeFile, setResumeFile] = useState<File | null>(null);
+
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
@@ -47,6 +54,58 @@ function HiringPage() {
     setFormData((prev) => ({ ...prev, [key]: value }));
   };
 
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+
+    if (!apiBaseUrl) {
+      toast.error('O envio não está disponível: configure VITE_API_URL no servidor.');
+      return;
+    }
+
+    const required = [
+      formData.firstName.trim(),
+      formData.lastName.trim(),
+      formData.streetAddress.trim(),
+      formData.city.trim(),
+      formData.state.trim(),
+      formData.zipCode.trim(),
+      formData.email.trim(),
+      formData.phone.trim(),
+      formData.position,
+      formData.desiredSalary.trim(),
+    ];
+    if (required.some((v) => !v)) {
+      toast.error('Preencha todos os campos obrigatórios.');
+      return;
+    }
+
+    const fd = new FormData();
+    (Object.keys(formData) as (keyof typeof formData)[]).forEach((key) => {
+      const v = formData[key];
+      fd.append(key, typeof v === 'boolean' ? (v ? 'true' : 'false') : v);
+    });
+    if (resumeFile) {
+      fd.append('resume', resumeFile);
+    }
+
+    setSubmitting(true);
+    try {
+      await submitHiringApplication(fd);
+      toast.success('Candidatura enviada com sucesso. Entraremos em contato em breve.');
+      setResumeFile(null);
+    } catch (err) {
+      const msg =
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : 'Não foi possível enviar.';
+      toast.error(msg);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   const inputClass =
     'w-full px-3 py-2 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary';
   const labelClass = 'block text-slate-700 text-sm font-medium mb-1';
@@ -85,6 +144,7 @@ function HiringPage() {
             </p>
             <hr className="border-slate-200 mb-8" />
 
+            <form onSubmit={handleSubmit} className="space-y-0">
             {/* Contact Info */}
             <h3 className={sectionTitle}>Contact Info</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
@@ -364,15 +424,18 @@ function HiringPage() {
                 type="file"
                 className="w-full text-sm text-slate-600 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:bg-primary file:text-white file:font-medium hover:file:bg-primaryDark"
                 accept=".pdf,.doc,.docx,.jpg,.jpeg"
+                onChange={(ev) => setResumeFile(ev.target.files?.[0] ?? null)}
               />
             </div>
 
             <button
-              type="button"
-              className="w-full py-3 bg-primary text-white font-semibold rounded-lg hover:bg-primaryDark transition-colors uppercase tracking-wide"
+              type="submit"
+              disabled={submitting}
+              className="w-full py-3 bg-primary text-white font-semibold rounded-lg hover:bg-primaryDark transition-colors uppercase tracking-wide disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              Submit
+              {submitting ? 'Enviando…' : 'Submit'}
             </button>
+            </form>
           </div>
         </div>
       </section>

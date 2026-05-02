@@ -8,15 +8,16 @@ import {
   type ReactNode,
 } from 'react';
 import {
-  FacebookAuthProvider,
   GoogleAuthProvider,
   createUserWithEmailAndPassword,
   onAuthStateChanged,
   signInWithEmailAndPassword,
   signInWithPopup,
+  signInWithRedirect,
   signOut as firebaseSignOut,
   updateProfile,
   sendEmailVerification,
+  type AuthProvider,
   type User,
 } from 'firebase/auth';
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
@@ -34,7 +35,6 @@ interface AuthContextValue {
   loading: boolean;
   firebaseReady: boolean;
   signInWithGoogle: () => Promise<void>;
-  signInWithFacebook: () => Promise<void>;
   signInWithEmail: (email: string, password: string) => Promise<void>;
   signUpWithEmail: (input: {
     email: string;
@@ -49,6 +49,11 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 const USERS = 'users';
+const POPUP_FALLBACK_CODES = new Set([
+  'auth/popup-blocked',
+  'auth/cancelled-popup-request',
+  'auth/operation-not-supported-in-this-environment',
+]);
 
 async function writeUserProfile(
   uid: string,
@@ -129,30 +134,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const signInWithGoogle = useCallback(async () => {
+  const signInWithProvider = useCallback(async (provider: AuthProvider) => {
     const auth = getFirebaseAuth();
-    const provider = new GoogleAuthProvider();
-    provider.setCustomParameters({ prompt: 'select_account' });
-    const cred = await signInWithPopup(auth, provider);
-    const u = cred.user;
-    await writeUserProfile(u.uid, {
-      fullName: u.displayName ?? '',
-      phone: '',
-      email: u.email ?? '',
-    });
+    try {
+      const cred = await signInWithPopup(auth, provider);
+      const u = cred.user;
+      await writeUserProfile(u.uid, {
+        fullName: u.displayName ?? '',
+        phone: '',
+        email: u.email ?? '',
+      });
+    } catch (e: unknown) {
+      const code =
+        e && typeof e === 'object' && 'code' in e
+          ? String((e as { code: string }).code)
+          : '';
+      if (!POPUP_FALLBACK_CODES.has(code)) {
+        throw e;
+      }
+      await signInWithRedirect(auth, provider);
+    }
   }, []);
 
-  const signInWithFacebook = useCallback(async () => {
-    const auth = getFirebaseAuth();
-    const provider = new FacebookAuthProvider();
-    const cred = await signInWithPopup(auth, provider);
-    const u = cred.user;
-    await writeUserProfile(u.uid, {
-      fullName: u.displayName ?? '',
-      phone: '',
-      email: u.email ?? '',
-    });
-  }, []);
+  const signInWithGoogle = useCallback(async () => {
+    const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: 'select_account' });
+    await signInWithProvider(provider);
+  }, [signInWithProvider]);
 
   const signInWithEmail = useCallback(async (email: string, password: string) => {
     const auth = getFirebaseAuth();
@@ -199,7 +207,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loading,
       firebaseReady: isFirebaseConfigured(),
       signInWithGoogle,
-      signInWithFacebook,
       signInWithEmail,
       signUpWithEmail,
       signOut,
@@ -210,7 +217,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       profile,
       loading,
       signInWithGoogle,
-      signInWithFacebook,
       signInWithEmail,
       signUpWithEmail,
       signOut,

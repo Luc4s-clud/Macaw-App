@@ -18,6 +18,8 @@ function warmMenuImages(items: ApiMenuItem[]) {
 
 let cachedItems: ApiMenuItem[] | null = null;
 let inflight: Promise<ApiMenuItem[]> | null = null;
+let cachedAtMs = 0;
+const MENU_CLIENT_CACHE_TTL_MS = 60_000;
 
 async function fetchMenuFromApi(): Promise<ApiMenuItem[]> {
   const baseUrl = requireApiUrl();
@@ -46,13 +48,16 @@ export function prefetchMenu(): void {
 /**
  * Menu do Square via backend. Reutiliza o mesmo array em memória após o 1º sucesso.
  */
-export async function getMenu(): Promise<ApiMenuItem[]> {
-  if (cachedItems !== null) return cachedItems;
+export async function getMenu(options: { forceRefresh?: boolean } = {}): Promise<ApiMenuItem[]> {
+  const { forceRefresh = false } = options;
+  const isFresh = Date.now() - cachedAtMs < MENU_CLIENT_CACHE_TTL_MS;
+  if (!forceRefresh && cachedItems !== null && isFresh) return cachedItems;
   if (inflight) return inflight;
 
   inflight = fetchMenuFromApi()
     .then((items) => {
       cachedItems = items;
+      cachedAtMs = Date.now();
       warmMenuImages(items);
       return items;
     })

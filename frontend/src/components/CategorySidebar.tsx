@@ -45,7 +45,7 @@ const rowIdle =
 
 function CategorySidebar({ categories = DEFAULT_CATEGORIES, selected, onChange }: Props) {
   return (
-    <div className="w-full md:contents flex flex-col gap-0">
+    <>
       {/* Mobile: faixa horizontal com rolagem — evita coluna estreita ao lado do grid */}
       <nav
         className="md:hidden sticky z-[15] -mx-1 px-1 pt-0.5 pb-2 mb-0.5 bg-gradient-to-b from-white/98 via-white/95 to-transparent backdrop-blur-md border-b border-slate-200/70"
@@ -63,7 +63,7 @@ function CategorySidebar({ categories = DEFAULT_CATEGORIES, selected, onChange }
                 key={cat.id}
                 type="button"
                 onClick={() => onChange(cat.id)}
-                className={`shrink-0 snap-start max-w-[80vw] rounded-full px-3 py-1.5 text-left text-xs font-semibold leading-snug transition-all duration-200 ${
+                className={`shrink-0 snap-start max-w-[80vw] rounded-full px-3 py-1.5 text-left text-[13px] font-medium antialiased leading-snug transition-all duration-200 ${
                   isActive ? chipActive : chipIdle
                 }`}
               >
@@ -75,9 +75,10 @@ function CategorySidebar({ categories = DEFAULT_CATEGORIES, selected, onChange }
       </nav>
 
       {/* Desktop: sidebar vertical */}
+      <div className="hidden md:block w-48 lg:w-[15.5rem] shrink-0" aria-hidden />
       <aside
         id="menu"
-        className="hidden md:flex flex-col w-48 lg:w-[15.5rem] shrink-0 sticky top-24 lg:top-28 self-start rounded-2xl border border-slate-200/80 bg-gradient-to-b from-white via-white to-violet-50/40 backdrop-blur-md p-3 sm:p-4 shadow-[0_8px_30px_rgb(0,0,0,0.06)] max-h-[calc(100vh-7rem)] lg:max-h-[calc(100vh-8rem)]"
+        className="hidden md:flex fixed z-20 top-24 lg:top-28 left-[max(0.75rem,calc((100vw-80rem)/2+0.75rem))] lg:left-[max(1rem,calc((100vw-80rem)/2+1rem))] flex-col w-48 lg:w-[15.5rem] rounded-2xl border border-slate-200/80 bg-gradient-to-b from-white via-white to-violet-50/40 backdrop-blur-md p-3 sm:p-4 shadow-[0_8px_30px_rgb(0,0,0,0.06)] max-h-[calc(100vh-7rem)] lg:max-h-[calc(100vh-8rem)]"
         aria-label="Categorias do menu"
       >
         <div className="mb-3 sm:mb-4 px-0.5">
@@ -99,7 +100,7 @@ function CategorySidebar({ categories = DEFAULT_CATEGORIES, selected, onChange }
                 key={cat.id}
                 type="button"
                 onClick={() => onChange(cat.id)}
-                className={`w-full text-left rounded-xl px-3 py-2.5 sm:py-3 text-xs sm:text-[0.8125rem] font-semibold leading-snug transition-all duration-200 break-words whitespace-normal ${
+                className={`w-full text-left rounded-xl px-3 py-2.5 sm:py-3 text-[13px] sm:text-sm font-medium antialiased leading-snug transition-all duration-200 break-words whitespace-normal ${
                   isActive ? rowActive : rowIdle
                 }`}
               >
@@ -109,7 +110,7 @@ function CategorySidebar({ categories = DEFAULT_CATEGORIES, selected, onChange }
           })}
         </nav>
       </aside>
-    </div>
+    </>
   );
 }
 

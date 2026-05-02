@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
+import { Clock3 } from 'lucide-react';
 import { getMenu } from '../services/api';
 import type { ApiMenuItem } from '../services/api/types';
 import type { Product } from '../types/product';
@@ -14,6 +15,50 @@ const UBER_EATS_STORE_URL =
   'https://www.ubereats.com/store-browse-uuid/9c6f9c55-08b1-5b2f-a082-499cbc9d0677?diningMode=DELIVERY';
 const DOORDASH_LOGO_URL = '/pictures/logodoordash.png';
 const UBER_EATS_LOGO_URL = '/pictures/logoubereats.png';
+const STORE_TIME_ZONE = 'America/New_York';
+const OPEN_MINUTES = 10 * 60;
+const CLOSE_MINUTES = 21 * 60 + 30;
+
+function formatUsHour(minutes: number): string {
+  const hour24 = Math.floor(minutes / 60);
+  const minute = minutes % 60;
+  const isPm = hour24 >= 12;
+  const hour12 = hour24 % 12 || 12;
+  return `${String(hour12).padStart(2, '0')}:${String(minute).padStart(2, '0')}${isPm ? 'PM' : 'AM'}`;
+}
+
+function getStoreTimeParts(reference: Date) {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: STORE_TIME_ZONE,
+    weekday: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+
+  const parts = formatter.formatToParts(reference);
+  const weekday = parts.find((part) => part.type === 'weekday')?.value ?? 'Mon';
+  const hour = Number(parts.find((part) => part.type === 'hour')?.value ?? '0');
+  const minute = Number(parts.find((part) => part.type === 'minute')?.value ?? '0');
+
+  return {
+    weekday,
+    minutes: hour * 60 + minute,
+  };
+}
+
+function getStoreStatus(reference: Date) {
+  const { weekday, minutes } = getStoreTimeParts(reference);
+  const isTuesday = weekday === 'Tue';
+  const isOpen = !isTuesday && minutes >= OPEN_MINUTES && minutes < CLOSE_MINUTES;
+
+  return {
+    isOpen,
+    isTuesday,
+    opensAt: formatUsHour(OPEN_MINUTES),
+    closesAt: formatUsHour(CLOSE_MINUTES),
+  };
+}
 
 function apiItemToProduct(m: ApiMenuItem): Product {
   return {
@@ -117,15 +162,21 @@ function MenuPage({ onItemAddedToCart }: Props) {
   const [selected, setSelected] = useState<Product | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [menuVisible, setMenuVisible] = useState(false);
+  const [timeTick, setTimeTick] = useState(() => Date.now());
+  const [showClosedNotice, setShowClosedNotice] = useState(false);
+  const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
 
   const categories = useMemo(() => buildMenuCategories(menuItems), [menuItems]);
 
   useEffect(() => {
     if (orderType !== 'pickup') return undefined;
     let cancelled = false;
-    setLoading(true);
-    getMenu()
-      .then((items) => {
+    let firstLoad = true;
+
+    const syncMenu = (forceRefresh = false) => {
+      if (firstLoad) setLoading(true);
+      return getMenu({ forceRefresh })
+        .then((items) => {
         if (cancelled) return;
         const mapped = dedupeProducts(
           items.map(apiItemToProduct).filter((p) => !isHiddenBuildYourOwnDuplicate(p))
@@ -139,14 +190,24 @@ function MenuPage({ onItemAddedToCart }: Props) {
           return prev && tabIds.includes(prev) ? prev : tabIds[0];
         });
       })
-      .catch((e) => {
-        if (!cancelled) setError(e?.message ?? 'Falha ao carregar o menu.');
+        .catch((e) => {
+        if (!cancelled) setError(e?.message ?? 'Failed to load menu.');
       })
-      .finally(() => {
+        .finally(() => {
         if (!cancelled) setLoading(false);
+          firstLoad = false;
       });
+    };
+
+    void syncMenu(true);
+
+    const interval = window.setInterval(() => {
+      void syncMenu(true);
+    }, 120_000);
+
     return () => {
       cancelled = true;
+      window.clearInterval(interval);
     };
   }, [orderType]);
 
@@ -158,18 +219,88 @@ function MenuPage({ onItemAddedToCart }: Props) {
     return () => window.clearTimeout(timer);
   }, []);
 
-  const filtered = useMemo(() => {
-    if (!selectedCategory) return menuItems;
-    const tab = categories.find((c) => c.id === selectedCategory);
-    const ids = tab?.backendIds;
-    if (ids && ids.length > 0) {
-      return menuItems.filter((p) => ids.includes(p.category));
-    }
-    return menuItems.filter((p) => p.category === selectedCategory);
-  }, [menuItems, selectedCategory, categories]);
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      setTimeTick(Date.now());
+    }, 60_000);
+    return () => window.clearInterval(interval);
+  }, []);
 
-  const sectionTitle =
-    categories.find((c) => c.id === selectedCategory)?.label ?? 'Menu';
+  const groupedSections = useMemo(() => {
+    if (categories.length === 0) {
+      return [{ id: 'menu', label: 'Menu', items: menuItems }];
+    }
+    return categories.map((cat) => {
+      const ids = cat.backendIds;
+      const items =
+        ids && ids.length > 0
+          ? menuItems.filter((p) => ids.includes(p.category))
+          : menuItems.filter((p) => p.category === cat.id);
+      return { id: cat.id, label: cat.label, items };
+    });
+  }, [categories, menuItems]);
+
+  const sectionTitle = groupedSections.find((c) => c.id === selectedCategory)?.label ?? 'Menu';
+  const storeStatus = useMemo(() => getStoreStatus(new Date(timeTick)), [timeTick]);
+  const hasAnySectionItems = groupedSections.some((section) => section.items.length > 0);
+
+  useEffect(() => {
+    if (!storeStatus.isOpen) {
+      setShowClosedNotice(true);
+    }
+  }, [storeStatus.isOpen]);
+
+  useEffect(() => {
+    if (orderType !== 'pickup' || groupedSections.length === 0) return;
+
+    const visibleSections = groupedSections.filter((section) => section.items.length > 0);
+    if (visibleSections.length === 0) return;
+
+    let ticking = false;
+    const anchorOffset = 150; // considera navbar fixa + margem visual de leitura
+
+    const updateActiveCategory = () => {
+      ticking = false;
+
+      let candidate = visibleSections[0].id;
+      for (const section of visibleSections) {
+        const el = sectionRefs.current[section.id];
+        if (!el) continue;
+        const top = el.getBoundingClientRect().top;
+        if (top - anchorOffset <= 0) {
+          candidate = section.id;
+        } else {
+          break;
+        }
+      }
+
+      setSelectedCategory((prev) => (prev === candidate ? prev : candidate));
+    };
+
+    const onScrollOrResize = () => {
+      if (ticking) return;
+      ticking = true;
+      window.requestAnimationFrame(updateActiveCategory);
+    };
+
+    // sincroniza categoria ativa ao entrar na página/atualizar conteúdo
+    window.setTimeout(onScrollOrResize, 0);
+    window.addEventListener('scroll', onScrollOrResize, { passive: true });
+    window.addEventListener('resize', onScrollOrResize);
+
+    return () => {
+      window.removeEventListener('scroll', onScrollOrResize);
+      window.removeEventListener('resize', onScrollOrResize);
+    };
+  }, [groupedSections, orderType]);
+
+  function handleCategoryChange(categoryId: string) {
+    setSelectedCategory(categoryId);
+    const el = sectionRefs.current[categoryId];
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }
 
   function openProduct(p: Product) {
     setSelected(p);
@@ -179,7 +310,7 @@ function MenuPage({ onItemAddedToCart }: Props) {
   if (orderType === 'pickup' && loading) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-slate-500">
-        <p className="text-lg">Carregando menu...</p>
+        <p className="text-lg">Loading menu...</p>
       </div>
     );
   }
@@ -187,10 +318,11 @@ function MenuPage({ onItemAddedToCart }: Props) {
   if (orderType === 'pickup' && error) {
     return (
       <div className="rounded-2xl bg-amber-50 border border-amber-200 p-6 text-center">
-        <p className="font-semibold text-amber-800">Não foi possível carregar o menu</p>
+        <p className="font-semibold text-amber-800">Could not load the menu</p>
         <p className="mt-1 text-sm text-amber-700">{error}</p>
         <p className="mt-3 text-xs text-amber-600">
-          Verifique se o backend está rodando e se o Square está configurado (VITE_API_URL e variáveis do backend).
+          Please make sure the backend is running and Square is configured (`VITE_API_URL` and backend
+          environment variables).
         </p>
       </div>
     );
@@ -226,6 +358,34 @@ function MenuPage({ onItemAddedToCart }: Props) {
                 Delivery
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {!storeStatus.isOpen && showClosedNotice && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4 backdrop-blur-[1px]">
+          <div className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-600">
+              <Clock3 className="h-7 w-7" />
+            </div>
+            <h2 className="text-center font-display text-3xl font-semibold text-slate-900">
+              We are currently closed
+            </h2>
+            <p className="mt-2 text-center text-sm font-medium text-slate-700">
+              Business hours: {storeStatus.opensAt} to {storeStatus.closesAt}
+            </p>
+            <p className="mt-1 text-center text-sm text-slate-600">
+              {storeStatus.isTuesday
+                ? 'We are closed on Tuesdays.'
+                : 'We will be back during the next business hours.'}
+            </p>
+            <button
+              type="button"
+              onClick={() => setShowClosedNotice(false)}
+              className="mt-6 w-full rounded-full bg-primary px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-primaryDark"
+            >
+              Got it
+            </button>
           </div>
         </div>
       )}
@@ -281,7 +441,7 @@ function MenuPage({ onItemAddedToCart }: Props) {
         <CategorySidebar
           categories={categories.length > 0 ? categories : undefined}
           selected={selectedCategory}
-          onChange={setSelectedCategory}
+          onChange={handleCategoryChange}
         />
         <div className="flex-1 min-w-0 space-y-3 sm:space-y-6 md:min-h-0">
           <header className="relative rounded-xl sm:rounded-2xl border border-slate-200/90 bg-white/80 px-3 py-2.5 sm:px-6 sm:py-5 shadow-sm backdrop-blur-sm">
@@ -300,22 +460,46 @@ function MenuPage({ onItemAddedToCart }: Props) {
               </p>
             </div>
           </header>
-          <div className="grid grid-cols-2 xl:grid-cols-3 gap-2 sm:gap-4 md:gap-6">
-            {filtered.length === 0 ? (
-              <p className="col-span-full text-center text-slate-500 py-8">
-                Nenhum item nesta categoria. Adicione itens no catálogo do Square para aparecerem aqui.
-              </p>
-            ) : (
-              filtered.map((product, index) => (
-                <ProductCard
-                  key={product.id}
-                  product={product}
-                  priority={index < MENU_IMAGE_PRIORITY_COUNT}
-                  onClick={() => openProduct(product)}
-                />
-              ))
-            )}
-          </div>
+          {!hasAnySectionItems ? (
+            <p className="col-span-full text-center text-slate-500 py-8">
+              No items in this category yet. Add items in the Square catalog to show them here.
+            </p>
+          ) : (
+            <div className="space-y-8 sm:space-y-10">
+              {groupedSections.map((section) => (
+                <section
+                  key={section.id}
+                  data-category-id={section.id}
+                  ref={(el) => {
+                    sectionRefs.current[section.id] = el;
+                  }}
+                  className="scroll-mt-28"
+                >
+                  <div className="mb-3">
+                    <h3 className="inline-flex items-center rounded-xl border border-white/70 bg-white/85 px-3 py-1.5 font-display text-lg sm:text-2xl font-semibold text-slate-900 tracking-tight shadow-sm backdrop-blur-sm">
+                      {section.label}
+                    </h3>
+                  </div>
+                  {section.items.length === 0 ? (
+                    <p className="text-sm text-slate-500 py-3">
+                      No items in this category yet.
+                    </p>
+                  ) : (
+                    <div className="grid grid-cols-2 xl:grid-cols-3 gap-2 sm:gap-4 md:gap-6">
+                      {section.items.map((product, index) => (
+                        <ProductCard
+                          key={product.id}
+                          product={product}
+                          priority={index < MENU_IMAGE_PRIORITY_COUNT}
+                          onClick={() => openProduct(product)}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </section>
+              ))}
+            </div>
+          )}
         </div>
       </div>
       )}

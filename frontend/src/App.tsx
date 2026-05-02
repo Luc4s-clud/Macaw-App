@@ -12,10 +12,12 @@ import EventsPage from './pages/EventsPage';
 import SignInPage from './pages/SignInPage';
 import CartDrawer from './components/CartDrawer';
 import Footer from './components/Footer';
+import MobileBottomBar from './components/MobileBottomBar';
 import CheckoutPage from './pages/CheckoutPage';
 import CheckoutCompletePage from './pages/CheckoutCompletePage';
 import TrackOrderPage from './pages/TrackOrderPage';
 import { CartProvider } from './context/CartContext';
+import { Toaster } from 'sonner';
 
 function App() {
   const location = useLocation();
@@ -57,6 +59,17 @@ function App() {
 
   return (
     <CartProvider>
+      <Toaster
+        position="top-center"
+        richColors
+        closeButton
+        toastOptions={{
+          classNames: {
+            toast: 'font-body text-[15px] shadow-lg border border-slate-200/80',
+            success: '!border-[#6d28d9]/25',
+          },
+        }}
+      />
       <div className={`min-h-screen flex flex-col relative overflow-x-hidden ${plainBg}`}>
         {backgroundImage !== 'none' && (
           <div
@@ -76,7 +89,7 @@ function App() {
           <Header
             onCartClick={() => setIsCartOpen(true)}
             />
-          <main className="flex-1">
+          <main className={`flex-1 pt-[4.25rem] sm:pt-[4.6rem] ${path === '/' ? 'pb-44 md:pb-0' : ''}`}>
             <Routes>
               <Route
                 path="/"
@@ -99,13 +112,18 @@ function App() {
                 path="/menu"
                 element={
                   <section className="max-w-7xl mx-auto px-3 sm:px-4 py-4 sm:py-10 space-y-4 sm:space-y-6">
-                    <MenuPage onItemAddedToCart={() => setIsCartOpen(true)} />
+                    <MenuPage onItemAddedToCart={() => {}} />
                   </section>
                 }
               />
             </Routes>
           </main>
           <Footer />
+          {path === '/' && (
+            <MobileBottomBar
+              onPromoClick={() => navigate('/sign-in?mode=register&promo=first-order-30')}
+            />
+          )}
           <CartDrawer open={isCartOpen} onClose={() => setIsCartOpen(false)} />
         </div>
         {path === '/' && showWelcomeOrderModal && (

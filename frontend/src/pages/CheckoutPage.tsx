@@ -10,6 +10,41 @@ import { squareCheckoutMode } from '../config/env';
 const PENDING_ORDER_KEY = 'macaw_pending_square_order';
 const SALES_TAX_RATE = 0.06;
 const SERVICE_FEE = 1.5;
+const STORE_TIME_ZONE = 'America/New_York';
+const OPEN_MINUTES = 10 * 60;
+const CLOSE_MINUTES = 21 * 60 + 30;
+
+function formatUsHour(minutes: number): string {
+  const hour24 = Math.floor(minutes / 60);
+  const minute = minutes % 60;
+  const isPm = hour24 >= 12;
+  const hour12 = hour24 % 12 || 12;
+  return `${String(hour12).padStart(2, '0')}:${String(minute).padStart(2, '0')}${isPm ? 'PM' : 'AM'}`;
+}
+
+function getStoreStatus(reference: Date) {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: STORE_TIME_ZONE,
+    weekday: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+  const parts = formatter.formatToParts(reference);
+  const weekday = parts.find((part) => part.type === 'weekday')?.value ?? 'Mon';
+  const hour = Number(parts.find((part) => part.type === 'hour')?.value ?? '0');
+  const minute = Number(parts.find((part) => part.type === 'minute')?.value ?? '0');
+  const minutes = hour * 60 + minute;
+  const isTuesday = weekday === 'Tue';
+  const isOpen = !isTuesday && minutes >= OPEN_MINUTES && minutes < CLOSE_MINUTES;
+
+  return {
+    isOpen,
+    isTuesday,
+    opensAt: formatUsHour(OPEN_MINUTES),
+    closesAt: formatUsHour(CLOSE_MINUTES),
+  };
+}
 
 function CheckoutPage() {
   const navigate = useNavigate();
@@ -31,14 +66,24 @@ function CheckoutPage() {
   const [orderId, setOrderId] = useState<string | null>(null);
   const [paymentId, setPaymentId] = useState<string | null>(null);
   const [publicOrderCode, setPublicOrderCode] = useState<string | null>(null);
+  const [timeTick, setTimeTick] = useState(() => Date.now());
   const salesTax = Number((total * SALES_TAX_RATE).toFixed(2));
   const finalTotal = Number((total + salesTax + SERVICE_FEE).toFixed(2));
+  const storeStatus = getStoreStatus(new Date(timeTick));
+  const checkoutBlocked = !storeStatus.isOpen;
 
   useEffect(() => {
     if (items.length === 0 && !orderId) {
       navigate('/menu', { replace: true });
     }
   }, [items.length, navigate, orderId]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      setTimeTick(Date.now());
+    }, 60_000);
+    return () => window.clearInterval(interval);
+  }, []);
 
   const inputClass =
     'w-full px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary';
@@ -49,6 +94,14 @@ function CheckoutPage() {
     setError(null);
     const name = customerName.trim();
     const phone = customerPhone.trim();
+    if (checkoutBlocked) {
+      setError(
+        storeStatus.isTuesday
+          ? 'Checkout is unavailable on Tuesdays. Please come back on another day.'
+          : `Checkout is available from ${storeStatus.opensAt} to ${storeStatus.closesAt} (ET).`
+      );
+      return;
+    }
     if (!name || !phone) {
       setError('Please enter your name and phone number.');
       return;
@@ -157,6 +210,16 @@ function CheckoutPage() {
             : 'Review your order and enter your contact details.'}
         </p>
       </div>
+      {checkoutBlocked && (
+        <div className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900">
+          <p className="text-sm font-semibold">Checkout is currently unavailable</p>
+          <p className="mt-1 text-xs">
+            {storeStatus.isTuesday
+              ? 'We are closed all day on Tuesdays.'
+              : `Please place your order between ${storeStatus.opensAt} and ${storeStatus.closesAt} (ET).`}
+          </p>
+        </div>
+      )}
 
       <div className="grid gap-8 lg:grid-cols-5">
         <div className="lg:col-span-2 space-y-3 order-2 lg:order-1">
@@ -302,6 +365,7 @@ function CheckoutPage() {
               type="submit"
               disabled={
                 submitting ||
+                checkoutBlocked ||
                 items.length === 0 ||
                 (!hostedCheckout && squarePayConfigured && !squareCardReady)
               }

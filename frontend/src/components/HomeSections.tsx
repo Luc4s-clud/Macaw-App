@@ -36,7 +36,7 @@ function HomeSections() {
             <img
               src="/pictures/Painel1.avif"
               alt="Açaí berries in a wooden bowl"
-              className="w-full h-full object-cover"
+              className="w-full h-full object-cover rounded-lg"
             />
           </div>
         </div>
@@ -123,6 +123,21 @@ function HomeSections() {
           </div>
         </div>
       </section>
+
+      <Link
+        to="/sign-in?mode=register&promo=first-order-30"
+        className="hidden md:flex fixed right-0 bottom-6 z-40 h-52 w-56 rounded-l-2xl bg-gradient-to-br from-[#7a2cf2] to-primary text-white shadow-2xl ring-1 ring-white/20 p-5 flex-col justify-between transition-transform hover:scale-[1.02] hover:shadow-[0_20px_40px_rgba(66,22,116,0.45)]"
+      >
+        <div>
+          <p className="text-3xl font-extrabold leading-none">30% OFF</p>
+          <p className="mt-2 text-sm leading-snug text-white/90">
+            First order discount for new accounts.
+          </p>
+        </div>
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-white/90">
+          Claim Offer
+        </p>
+      </Link>
     </>
   );
 }

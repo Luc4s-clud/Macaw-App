@@ -21,6 +21,15 @@ const optional = {
   SQUARE_WEBHOOK_NOTIFICATION_URL: '',
   /** Apenas desenvolvimento: aceitar webhooks sem validar assinatura (não use em produção). */
   WEBHOOK_ALLOW_UNSIGNED: 'false',
+  /** SMTP (Hostinger e similares) — aviso de candidatura / contratação. */
+  SMTP_HOST: 'smtp.hostinger.com',
+  SMTP_PORT: '465',
+  SMTP_USER: '',
+  SMTP_PASS: '',
+  /** Remetente (ex.: caixa do domínio na Hostinger). */
+  MAIL_FROM: '',
+  /** E-mail do responsável que recebe as candidaturas. */
+  HIRING_NOTIFY_TO: '',
 };
 
 function getEnv() {

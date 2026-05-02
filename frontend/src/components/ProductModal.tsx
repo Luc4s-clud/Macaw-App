@@ -290,31 +290,90 @@ function ProductModal({ product, open, onClose, onAddedToCart }: Props) {
     return lines.length > 0 ? lines.join(' | ') : undefined;
   }
 
-  function handleAdd() {
+  function getVisibleCartButton(): HTMLElement | null {
+    const candidates = Array.from(document.querySelectorAll<HTMLElement>('[data-cart-button="true"]'));
+    return candidates.find((el) => el.offsetParent !== null) ?? candidates[0] ?? null;
+  }
+
+  function animateToCart(sourceRect: DOMRect) {
+    const cartButton = getVisibleCartButton();
+    if (!cartButton) return;
+
+    const targetRect = cartButton.getBoundingClientRect();
+    const ghost = document.createElement('div');
+
+    ghost.style.position = 'fixed';
+    ghost.style.left = `${sourceRect.left + sourceRect.width / 2 - 28}px`;
+    ghost.style.top = `${sourceRect.top + sourceRect.height / 2 - 28}px`;
+    ghost.style.width = '56px';
+    ghost.style.height = '56px';
+    ghost.style.borderRadius = '9999px';
+    ghost.style.pointerEvents = 'none';
+    ghost.style.zIndex = '9999';
+    ghost.style.boxShadow = '0 8px 20px rgba(0,0,0,0.24)';
+    ghost.style.border = '1px solid rgba(255,255,255,0.7)';
+    ghost.style.background = currentProduct.imageUrl?.trim()
+      ? `center / cover no-repeat url("${currentProduct.imageUrl}")`
+      : 'linear-gradient(135deg, #7c3aed, #5b21b6)';
+
+    const badge = document.createElement('div');
+    badge.textContent = '+';
+    badge.style.position = 'absolute';
+    badge.style.right = '-7px';
+    badge.style.bottom = '-7px';
+    badge.style.width = '20px';
+    badge.style.height = '20px';
+    badge.style.borderRadius = '9999px';
+    badge.style.display = 'flex';
+    badge.style.alignItems = 'center';
+    badge.style.justifyContent = 'center';
+    badge.style.fontSize = '14px';
+    badge.style.fontWeight = '700';
+    badge.style.lineHeight = '1';
+    badge.style.color = '#5b21b6';
+    badge.style.background = '#ffffff';
+    badge.style.boxShadow = '0 2px 8px rgba(0,0,0,0.2)';
+    ghost.appendChild(badge);
+
+    document.body.appendChild(ghost);
+
+    const deltaX = targetRect.left + targetRect.width / 2 - (sourceRect.left + sourceRect.width / 2);
+    const deltaY = targetRect.top + targetRect.height / 2 - (sourceRect.top + sourceRect.height / 2);
+    ghost.style.transition = 'transform 980ms cubic-bezier(.22,.82,.2,1), opacity 980ms ease';
+    requestAnimationFrame(() => {
+      ghost.style.transform = `translate(${deltaX}px, ${deltaY}px) scale(0.28)`;
+      ghost.style.opacity = '0.15';
+    });
+    cartButton.classList.add('cart-bump');
+    window.setTimeout(() => cartButton.classList.remove('cart-bump'), 620);
+    window.setTimeout(() => ghost.remove(), 1100);
+  }
+
+  function handleAdd(event: React.MouseEvent<HTMLButtonElement>) {
     if (isBuildYourOwn) {
       if (selectedBase.length < 1 || selectedBase.length > 2) {
-        setValidationError('Selecione de 1 a 2 opções em Base.');
+        setValidationError('Select 1 to 2 options in Base.');
         return;
       }
       if (selectedBuildOwn.length > 3) {
-        setValidationError('Selecione no máximo 3 opções em Build your own.');
+        setValidationError('Select up to 3 options in Build your own.');
         return;
       }
       if (selectedExtraToppings.length > 24) {
-        setValidationError('Selecione no máximo 24 opções em Extra toppings.');
+        setValidationError('Select up to 24 options in Extra toppings.');
         return;
       }
     }
     if (isBowls16Oz && selectedBowl16Toppings.length > BOWL_16_OZ_TOPPINGS_MAX) {
-      setValidationError(`Selecione no máximo ${BOWL_16_OZ_TOPPINGS_MAX} opções em Toppings.`);
+      setValidationError(`Select up to ${BOWL_16_OZ_TOPPINGS_MAX} options in Toppings.`);
       return;
     }
     if (showStandardExtraToppings && selectedBowl24Extras.length > BOWL_24_OZ_EXTRA_MAX) {
-      setValidationError(`Selecione no máximo ${BOWL_24_OZ_EXTRA_MAX} opções em Extra toppings.`);
+      setValidationError(`Select up to ${BOWL_24_OZ_EXTRA_MAX} options in Extra toppings.`);
       return;
     }
     if (isCrepeSwiss && !crepeSwissFlavor) {
-      setValidationError('Selecione 1 opção em Swiss Crepe.');
+      setValidationError('Select 1 option in Swiss Crepe.');
       return;
     }
     if (comboKind === 'popular') {
@@ -322,37 +381,39 @@ function ProductModal({ product, open, onClose, onAddedToCart }: Props) {
         comboPopularCrepes.length < 1 ||
         comboPopularCrepes.length > COMBO_POPULAR_CREPES_MAX
       ) {
-        setValidationError('Selecione de 1 a 3 opções em Choose your Crepes.');
+        setValidationError('Select 1 to 3 options in Choose your Crepes.');
         return;
       }
       if (!comboPopularBowl16) {
-        setValidationError('Selecione 1 opção em Choose your Bowl.');
+        setValidationError('Select 1 option in Choose your Bowl.');
         return;
       }
       if (!comboPopularJuice) {
-        setValidationError('Selecione 1 opção em Choose your juice.');
+        setValidationError('Select 1 option in Choose your juice.');
         return;
       }
     }
     if (comboKind === 'individual') {
       if (!comboIndividualBowl8) {
-        setValidationError('Selecione 1 opção em Choose your bowl.');
+        setValidationError('Select 1 option in Choose your bowl.');
         return;
       }
       if (!comboIndividualSoda) {
-        setValidationError('Selecione 1 opção em Choose your Soda.');
+        setValidationError('Select 1 option in Choose your Soda.');
         return;
       }
     }
     if (comboKind === 'premium' && !comboPremiumCup) {
-      setValidationError('Selecione 1 opção em Choose your Special Cup.');
+      setValidationError('Select 1 option in Choose your Special Cup.');
       return;
     }
     setValidationError(null);
+    const sourceRect = event.currentTarget.getBoundingClientRect();
     addItem({ ...currentProduct, price: finalPrice }, buildObservation());
     setObservation('');
     onAddedToCart?.();
     onClose();
+    window.setTimeout(() => animateToCart(sourceRect), 120);
   }
 
   return (
@@ -362,7 +423,7 @@ function ProductModal({ product, open, onClose, onAddedToCart }: Props) {
           type="button"
           onClick={onClose}
           className="absolute right-3 top-3 z-10 p-2 rounded-full bg-white/90 shadow-md hover:bg-white min-h-[44px] min-w-[44px] flex items-center justify-center"
-          aria-label="Fechar"
+          aria-label="Close"
         >
           <X className="w-5 h-5 text-slate-700" />
         </button>

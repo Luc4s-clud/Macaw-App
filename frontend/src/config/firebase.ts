@@ -25,7 +25,7 @@ let app: FirebaseApp | undefined;
 export function getFirebaseApp(): FirebaseApp {
   if (!isFirebaseConfigured()) {
     throw new Error(
-      'Firebase não está configurado. Defina VITE_FIREBASE_* no .env (veja .env.example).'
+      'Firebase is not configured. Set `VITE_FIREBASE_*` in the frontend `.env` file (see `.env.example`).'
     );
   }
   if (!app) {

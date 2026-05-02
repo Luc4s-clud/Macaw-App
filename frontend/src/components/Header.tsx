@@ -1,5 +1,5 @@
 import { Menu, ShoppingBag, X } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, NavLink } from 'react-router-dom';
 import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
 import { useEffect, useState } from 'react';
@@ -44,42 +44,52 @@ function Header({ onCartClick }: HeaderProps) {
     };
   }, [mobileOpen]);
 
-  const navLinkBase =
-    'text-white/90 hover:text-white transition-colors text-sm font-medium tracking-wide';
-  const navLinkDesktop = `${navLinkBase} relative py-2 after:absolute after:left-0 after:bottom-0 after:h-0.5 after:w-0 after:bg-accent after:transition-all hover:after:w-full`;
+  const navLinkBase = 'transition-colors text-sm font-medium tracking-wide';
 
   return (
     <header
-      className={`sticky top-0 z-30 transition-shadow duration-300 bg-primary border-b border-white/10 ${
-        scrolled ? 'shadow-lg shadow-black/15' : ''
+      className={`fixed top-0 inset-x-0 z-30 transition-all duration-300 bg-gradient-to-r from-primaryDark via-primary to-primaryDark border-b border-white/10 ${
+        scrolled ? 'shadow-xl shadow-black/30 backdrop-blur-sm' : ''
       }`}
     >
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 h-[4.25rem] sm:h-16 flex items-center justify-between md:grid md:grid-cols-[1fr_auto_1fr] md:justify-center gap-2 md:gap-3 w-full">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 h-[4.25rem] sm:h-[4.6rem] flex items-center justify-between md:grid md:grid-cols-[1fr_auto_1fr] md:justify-center gap-2 md:gap-4 w-full">
         <nav
-          className="hidden md:flex items-center gap-7 lg:gap-9 md:justify-self-start"
+          className="hidden md:flex items-center gap-2 md:justify-self-start rounded-full bg-white/10 ring-1 ring-white/20 px-2 py-1 backdrop-blur-sm"
           aria-label="Primary"
         >
           {navItems.map(({ to, label }) => (
-            <Link key={to} to={to} className={navLinkDesktop}>
+            <NavLink
+              key={to}
+              to={to}
+              className={({ isActive }) =>
+                `${navLinkBase} relative px-4 py-2 rounded-full ${
+                  isActive
+                    ? 'bg-white !text-primaryDark shadow-sm font-semibold'
+                    : 'text-white/90 hover:text-white hover:bg-white/10'
+                }`
+              }
+            >
               {label}
-            </Link>
+            </NavLink>
           ))}
         </nav>
 
         <div className="min-w-0 md:justify-self-center">
           <Link
             to="/"
-            className="flex items-center gap-2 sm:gap-2.5 shrink-0"
+            className="group flex items-center gap-2 sm:gap-3 shrink-0 rounded-full bg-white/10 pl-1.5 pr-3 py-1 ring-1 ring-white/20 backdrop-blur-sm transition-all hover:bg-white/15 hover:ring-white/35"
             aria-label="Macaw Acaiteria - Home"
           >
-            <div className="h-9 w-9 sm:h-10 sm:w-10 rounded-full bg-white/12 flex items-center justify-center font-display font-bold text-white text-base sm:text-lg ring-1 ring-white/25">
-              M
-            </div>
+            <img
+              src="/pictures/15Macaw_RGB.png"
+              alt="Macaw Acaiteria logo"
+              className="h-10 w-10 sm:h-11 sm:w-11 rounded-full object-cover ring-1 ring-white/35 shadow-sm"
+            />
             <div className="text-left min-w-0">
               <span className="font-display text-sm sm:text-lg font-semibold text-white tracking-tight block leading-tight truncate max-w-[11rem] sm:max-w-none">
                 MACAW ACAITERIA
               </span>
-              <span className="text-[9px] sm:text-[10px] uppercase tracking-[0.2em] text-white/75">
+              <span className="text-[9px] sm:text-[10px] uppercase tracking-[0.2em] text-white/80 group-hover:text-white/90 transition-colors">
                 Real taste of Brazil
               </span>
             </div>
@@ -87,25 +97,35 @@ function Header({ onCartClick }: HeaderProps) {
         </div>
 
         <div className="flex items-center justify-end gap-1.5 sm:gap-3 shrink-0 md:justify-self-end">
-          <nav className="hidden md:flex items-center gap-7 lg:gap-9 shrink-0" aria-label="Account">
-            <a href="#gift-cards" className={navLinkBase}>
+          <nav
+            className="hidden md:flex items-center gap-2 shrink-0 rounded-full bg-white/10 ring-1 ring-white/20 px-2 py-1 backdrop-blur-sm"
+            aria-label="Account"
+          >
+            <a href="#gift-cards" className={`${navLinkBase} px-3 py-2 text-white/90 hover:text-white rounded-full hover:bg-white/10`}>
               Gift Cards
             </a>
-            <Link
+            <NavLink
               to="/sign-in"
-              className={`${navLinkBase} max-w-[10rem] truncate`}
-              title={user ? 'Minha conta' : 'Entrar'}
+              className={({ isActive }) =>
+                `${navLinkBase} max-w-[10rem] truncate px-3 py-2 rounded-full ${
+                  isActive
+                    ? 'bg-white !text-primaryDark shadow-sm font-semibold'
+                    : 'text-white/90 hover:text-white hover:bg-white/10'
+                }`
+              }
+              title={user ? 'My account' : 'Sign In'}
             >
               {!authLoading && user
                 ? displayName
                   ? displayName.split(/\s+/)[0]
                   : 'Account'
                 : 'Sign In'}
-            </Link>
+            </NavLink>
             <button
               onClick={onCartClick}
               type="button"
-              className="relative flex items-center gap-2 rounded-full bg-white/95 text-primary px-4 py-2 text-sm font-semibold shadow-md hover:bg-white ring-1 ring-white/30 transition-colors"
+              data-cart-button="true"
+              className="relative flex items-center gap-2 rounded-full bg-white/95 text-primary px-4 py-2 text-sm font-semibold shadow-md hover:bg-white ring-1 ring-white/30 transition-all hover:shadow-lg"
             >
               <ShoppingBag className="w-4 h-4 shrink-0" aria-hidden />
               <span>Cart</span>
@@ -125,13 +145,14 @@ function Header({ onCartClick }: HeaderProps) {
             onClick={() => setMobileOpen((o) => !o)}
           >
             {mobileOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-            <span className="sr-only">{mobileOpen ? 'Fechar menu' : 'Abrir menu'}</span>
+            <span className="sr-only">{mobileOpen ? 'Close menu' : 'Open menu'}</span>
           </button>
           <button
             onClick={onCartClick}
             type="button"
-            className="md:hidden relative p-2 rounded-full bg-white/95 text-primary ring-1 ring-white/30"
-            aria-label={`Carrinho${count > 0 ? `, ${count} itens` : ''}`}
+            data-cart-button="true"
+            className="md:hidden relative p-2 rounded-full bg-white/95 text-primary ring-1 ring-white/30 shadow-sm"
+            aria-label={`Cart${count > 0 ? `, ${count} items` : ''}`}
           >
             <ShoppingBag className="w-5 h-5" />
             {count > 0 && (
@@ -146,37 +167,41 @@ function Header({ onCartClick }: HeaderProps) {
       {mobileOpen && (
         <div
           id="mobile-nav"
-          className="md:hidden fixed inset-x-0 top-[4.25rem] bottom-0 bg-primary z-40 border-t border-white/10 overflow-y-auto"
+          className="md:hidden fixed inset-x-0 top-[4.25rem] sm:top-[4.6rem] bottom-0 bg-gradient-to-b from-primary to-primaryDark z-40 border-t border-white/10 overflow-y-auto"
           role="dialog"
           aria-modal="true"
-          aria-label="Navegação"
+          aria-label="Navigation"
         >
-          <nav className="flex flex-col p-6 gap-1" aria-label="Mobile">
+          <nav className="flex flex-col p-5 gap-2" aria-label="Mobile">
             {navItems.map(({ to, label }) => (
-              <Link
+              <NavLink
                 key={to}
                 to={to}
-                className={
-                  to === '/menu'
-                    ? 'text-white text-lg font-semibold py-3 px-4 rounded-xl bg-white/10 border border-white/15'
-                    : 'text-white/90 hover:text-white text-base font-medium py-3 px-4 rounded-xl hover:bg-white/5 transition-colors'
+                className={({ isActive }) =>
+                  isActive
+                    ? 'text-primary text-base font-semibold py-3 px-4 rounded-xl bg-white shadow-sm'
+                    : 'text-white/90 hover:text-white text-base font-medium py-3 px-4 rounded-xl hover:bg-white/10 transition-colors'
                 }
                 onClick={() => setMobileOpen(false)}
               >
                 {label}
-              </Link>
+              </NavLink>
             ))}
             <hr className="border-white/15 my-3" />
-            <a href="#gift-cards" className="text-white/85 py-2 px-4 text-sm">
+            <a href="#gift-cards" className="text-white/85 py-2 px-4 text-sm rounded-lg hover:bg-white/10 transition-colors">
               Gift Cards
             </a>
-            <Link
+            <NavLink
               to="/sign-in"
-              className="text-white/85 py-2 px-4 text-sm font-medium"
+              className={({ isActive }) =>
+                `py-2 px-4 text-sm font-medium rounded-lg transition-colors ${
+                  isActive ? 'bg-white text-primary' : 'text-white/85 hover:bg-white/10'
+                }`
+              }
               onClick={() => setMobileOpen(false)}
             >
-              {user ? (displayName ? `Olá, ${displayName.split(/\s+/)[0]}` : 'Minha conta') : 'Sign In'}
-            </Link>
+              {user ? (displayName ? `Hi, ${displayName.split(/\s+/)[0]}` : 'My account') : 'Sign In'}
+            </NavLink>
           </nav>
         </div>
       )}

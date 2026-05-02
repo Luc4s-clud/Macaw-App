@@ -280,6 +280,60 @@ function resolveItemImageUrl(itemData, variationData, byId) {
   return '';
 }
 
+function isCatalogObjectAvailableAtLocation(obj, locationId) {
+  if (!obj || obj.is_deleted === true) return false;
+  if (!locationId) return true;
+
+  const absent = Array.isArray(obj.absent_at_location_ids) ? obj.absent_at_location_ids : [];
+  if (absent.includes(locationId)) return false;
+
+  const presentAll = obj.present_at_all_locations;
+  if (presentAll === true) return true;
+
+  const presentIds = Array.isArray(obj.present_at_location_ids) ? obj.present_at_location_ids : null;
+  if (presentIds) {
+    // Quando present_at_all_locations=false, a lista define onde o item existe.
+    return presentIds.includes(locationId);
+  }
+
+  // Fallback seguro para objetos sem metadado de localização.
+  return true;
+}
+
+function isVariationSellable(variationData) {
+  if (!variationData || typeof variationData !== 'object') return false;
+  if (variationData.sellable === false) return false;
+  if (variationData.available_for_booking === false && variationData.sellable !== true) return false;
+  return true;
+}
+
+function isSoldOutForLocation(variationData, itemData, locationId) {
+  if (!variationData || typeof variationData !== 'object') return false;
+
+  // Campos comuns vistos em integrações de catálogo/ecommerce da Square.
+  if (variationData.sold_out === true) return true;
+  if (variationData.ecom_available === false) return true;
+
+  const checkOverrides = (overrides) => {
+    if (!Array.isArray(overrides)) return false;
+    for (const ov of overrides) {
+      if (!ov || typeof ov !== 'object') continue;
+      const ovLocationId = ov.location_id ?? ov.locationId ?? null;
+      const appliesToLocation = !locationId || !ovLocationId || ovLocationId === locationId;
+      if (!appliesToLocation) continue;
+
+      if (ov.sold_out === true) return true;
+      if (ov.sellable === false) return true;
+      if (ov.ecom_available === false) return true;
+    }
+    return false;
+  };
+
+  if (checkOverrides(variationData.location_overrides)) return true;
+  if (itemData && checkOverrides(itemData.location_overrides)) return true;
+  return false;
+}
+
 function dedupeMenuItems(items) {
   const byKey = new Map();
   for (const item of items) {
@@ -319,14 +373,16 @@ function dedupeMenuItems(items) {
   return [...byKey.values()];
 }
 
-function mapCatalogToMenuItems(objects, imageOverrides = {}) {
+function mapCatalogToMenuItems(objects, imageOverrides = {}, locationId = '') {
   const byId = Object.fromEntries(objects.map((o) => [o.id, o]));
   const items = [];
   const seen = new Set();
 
   for (const o of objects) {
     if (o.type !== 'ITEM' || !o.item_data?.variations?.length) continue;
+    if (!isCatalogObjectAvailableAtLocation(o, locationId)) continue;
     const itemData = o.item_data;
+    if (itemData?.is_archived === true) continue;
     // Ordem: categories (novo) → reporting_category (dashboard "Açaí") → category_id (deprecated)
     const categoryId =
       itemData.categories?.length > 0
@@ -345,8 +401,12 @@ function mapCatalogToMenuItems(objects, imageOverrides = {}) {
     for (const varRef of itemData.variations) {
       const varId = catalogRefToId(varRef);
       if (!varId || seen.has(varId)) continue;
-      const v = byId[varId]?.item_variation_data;
+      const variationObj = byId[varId];
+      if (!isCatalogObjectAvailableAtLocation(variationObj, locationId)) continue;
+      const v = variationObj?.item_variation_data;
       if (!v) continue;
+      if (!isVariationSellable(v)) continue;
+      if (isSoldOutForLocation(v, itemData, locationId)) continue;
       seen.add(varId);
       const fromCatalog = resolveItemImageUrl(itemData, v, byId);
       const fromOverride = resolveImageOverride(imageOverrides, {
@@ -401,6 +461,7 @@ export async function getMenuItems() {
   }
 
   const imageOverrides = loadMenuImageOverrides();
+  const { locationId } = getConfig();
   let cursor = null;
   const allObjects = [];
   do {
@@ -428,10 +489,10 @@ export async function getMenuItems() {
       }
     }
     const withImages = await ensureImageObjectsInCatalog(merged);
-    mapped = mapCatalogToMenuItems(withImages, imageOverrides);
+    mapped = mapCatalogToMenuItems(withImages, imageOverrides, locationId);
   } else {
     const withImages = await ensureImageObjectsInCatalog(allObjects);
-    mapped = mapCatalogToMenuItems(withImages, imageOverrides);
+    mapped = mapCatalogToMenuItems(withImages, imageOverrides, locationId);
   }
 
   if (ttlMs > 0) {

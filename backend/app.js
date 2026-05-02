@@ -7,6 +7,7 @@ import { errorHandler, notFound } from './middleware/errorHandler.js';
 import menuRoutes from './routes/menu.js';
 import orderRoutes from './routes/orders.js';
 import squareWebhookRoutes from './routes/webhooks.js';
+import hiringRoutes from './routes/hiring.js';
 
 export function createApp() {
   const env = loadEnv();
@@ -40,6 +41,7 @@ export function createApp() {
   });
   app.use('/api/menu', menuRoutes);
   app.use('/api/orders', orderRoutes);
+  app.use('/api/hiring', hiringRoutes);
 
   app.use(notFound);
   app.use(errorHandler(env.NODE_ENV));

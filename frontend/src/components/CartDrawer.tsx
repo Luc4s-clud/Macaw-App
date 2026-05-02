@@ -25,8 +25,18 @@ function CartDrawer({ open, onClose }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-40 flex justify-end bg-black/40">
-      <div className="w-full max-w-md h-[100dvh] max-h-[100dvh] bg-white shadow-2xl flex flex-col">
+    <div
+      className="fixed inset-0 z-40 flex justify-end bg-black/40"
+      onClick={onClose}
+      role="presentation"
+    >
+      <div
+        className="w-full max-w-md h-[100dvh] max-h-[100dvh] bg-white shadow-2xl flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Shopping cart"
+      >
         <div className="px-5 py-4 flex items-center justify-between border-b border-slate-100">
           <h2 className="font-display text-lg font-semibold text-slate-900">
             Your cart

@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 const phoneOk = (s: string) => {
@@ -10,19 +10,29 @@ const phoneOk = (s: string) => {
 
 export default function SignInPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const {
     firebaseReady,
     user,
     profile,
     signInWithGoogle,
-    signInWithFacebook,
     signInWithEmail,
     signUpWithEmail,
     signOut,
     sendVerificationEmail,
   } = useAuth();
 
-  const [mode, setMode] = useState<'login' | 'register'>('login');
+  const modeParam = searchParams.get('mode');
+  const promoParam = searchParams.get('promo');
+  const hasFirstOrderPromo = promoParam === 'first-order-30';
+  const targetPathAfterAuth = useMemo(
+    () => (hasFirstOrderPromo ? '/menu?promo=first-order-30' : '/'),
+    [hasFirstOrderPromo]
+  );
+
+  const [mode, setMode] = useState<'login' | 'register'>(
+    modeParam === 'register' || modeParam === 'signup' ? 'register' : 'login'
+  );
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [password2, setPassword2] = useState('');
@@ -31,6 +41,14 @@ export default function SignInPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (modeParam === 'register' || modeParam === 'signup') {
+      setMode('register');
+    } else if (modeParam === 'login') {
+      setMode('login');
+    }
+  }, [modeParam]);
 
   async function handleSocial(
     fn: () => Promise<void>,
@@ -41,14 +59,22 @@ export default function SignInPage() {
     setBusy(true);
     try {
       await fn();
-      navigate('/');
+      navigate(targetPathAfterAuth);
     } catch (e: unknown) {
       const code = e && typeof e === 'object' && 'code' in e ? String((e as { code: string }).code) : '';
       if (code === 'auth/popup-closed-by-user') {
         setError(null);
+      } else if (
+        code === 'auth/popup-blocked' ||
+        code === 'auth/cancelled-popup-request' ||
+        code === 'auth/operation-not-supported-in-this-environment'
+      ) {
+        setInfo('Your browser blocked popup login. We are redirecting to continue secure sign-in...');
+      } else if (code) {
+        setError(mapAuthError(code));
       } else {
         setError(
-          e instanceof Error ? e.message : `Não foi possível conectar com ${label}.`
+          e instanceof Error ? e.message : `Could not connect with ${label}.`
         );
       }
     } finally {
@@ -63,12 +89,12 @@ export default function SignInPage() {
     setBusy(true);
     try {
       await signInWithEmail(email.trim(), password);
-      navigate('/');
+      navigate(targetPathAfterAuth);
     } catch (e: unknown) {
       const msg =
         e && typeof e === 'object' && 'code' in e
           ? mapAuthError((e as { code: string }).code)
-          : 'E-mail ou senha inválidos.';
+          : 'Invalid email or password.';
       setError(msg);
     } finally {
       setBusy(false);
@@ -80,19 +106,19 @@ export default function SignInPage() {
     setError(null);
     setInfo(null);
     if (fullName.trim().length < 2) {
-      setError('Informe o nome completo.');
+      setError('Please enter your full name.');
       return;
     }
     if (password.length < 6) {
-      setError('A senha deve ter pelo menos 6 caracteres.');
+      setError('Password must be at least 6 characters.');
       return;
     }
     if (password !== password2) {
-      setError('As senhas não coincidem.');
+      setError('Passwords do not match.');
       return;
     }
     if (!phoneOk(phone)) {
-      setError('Telefone inválido (use apenas números e símbolos comuns).');
+      setError('Invalid phone number (use only numbers and common symbols).');
       return;
     }
     setBusy(true);
@@ -104,14 +130,14 @@ export default function SignInPage() {
         phone: phone.trim(),
       });
       setInfo(
-        'Conta criada. Enviamos um e-mail de verificação — confira a caixa de entrada (e o spam). O telefone foi salvo no perfil; não enviamos SMS.'
+        'Account created. We sent a verification email - please check your inbox (and spam). Your phone was saved in the profile; no SMS is sent.'
       );
-      navigate('/');
+      navigate(targetPathAfterAuth);
     } catch (e: unknown) {
       const msg =
         e && typeof e === 'object' && 'code' in e
           ? mapAuthError((e as { code: string }).code)
-          : 'Não foi possível criar a conta.';
+          : 'Could not create account.';
       setError(msg);
     } finally {
       setBusy(false);
@@ -122,13 +148,13 @@ export default function SignInPage() {
     return (
       <section className="max-w-lg mx-auto px-4 py-16">
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-amber-900 text-sm space-y-2">
-          <p className="font-semibold">Firebase não configurado</p>
+          <p className="font-semibold">Firebase not configured</p>
           <p>
-            Adicione as variáveis <code className="bg-amber-100/80 px-1 rounded">VITE_FIREBASE_*</code> no{' '}
-            <code className="bg-amber-100/80 px-1 rounded">.env</code> do frontend (veja{' '}
-            <code className="bg-amber-100/80 px-1 rounded">.env.example</code>). No Console do Firebase:
-            ative Authentication (Google, Facebook, E-mail/senha) e crie o Firestore com regras que
-            permitam cada usuário ler/escrever apenas <code className="bg-amber-100/80 px-1 rounded">users/&#123;uid&#125;</code>.
+            Add <code className="bg-amber-100/80 px-1 rounded">VITE_FIREBASE_*</code> variables to the frontend{' '}
+            <code className="bg-amber-100/80 px-1 rounded">.env</code> file (see{' '}
+            <code className="bg-amber-100/80 px-1 rounded">.env.example</code>). In Firebase Console:
+            enable Authentication (Google and email/password) and create Firestore rules that
+            allow each user to read/write only <code className="bg-amber-100/80 px-1 rounded">users/&#123;uid&#125;</code>.
           </p>
         </div>
       </section>
@@ -139,10 +165,10 @@ export default function SignInPage() {
     return (
       <section className="max-w-lg mx-auto px-4 py-12 space-y-6">
         <div className="rounded-2xl border border-slate-200 bg-white/95 p-6 shadow-sm space-y-4">
-          <h1 className="font-display text-2xl font-semibold text-slate-900">Sessão ativa</h1>
+          <h1 className="font-display text-2xl font-semibold text-slate-900">Active session</h1>
           <p className="text-slate-600 text-sm">
             <span className="font-medium text-slate-800">
-              {profile?.fullName || user.displayName || 'Usuário'}
+              {profile?.fullName || user.displayName || 'User'}
             </span>
             {user.email && (
               <>
@@ -153,40 +179,45 @@ export default function SignInPage() {
             {profile?.phone ? (
               <>
                 <br />
-                Tel.: {profile.phone}
+                Phone: {profile.phone}
               </>
             ) : null}
           </p>
           {!user.emailVerified && user.email && (
             <p className="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2">
-              E-mail ainda não verificado.{' '}
+              Email not verified yet.{' '}
               <button
                 type="button"
                 className="font-semibold text-primary underline"
                 onClick={() => {
                   void sendVerificationEmail().then(() =>
-                    setInfo('Link de verificação enviado novamente.')
+                    setInfo('Verification link sent again.')
                   );
                 }}
               >
-                Reenviar link
+                Resend link
               </button>
             </p>
           )}
           {info && <p className="text-sm text-emerald-700">{info}</p>}
+          {hasFirstOrderPromo && (
+            <p className="text-sm rounded-xl border border-primary/25 bg-primary/10 px-3 py-2 text-primaryDark">
+              Great news: your first order is eligible for 30% off after sign in.
+            </p>
+          )}
           <div className="flex flex-wrap gap-3">
             <Link
               to="/menu"
               className="inline-flex rounded-full bg-primary text-white px-5 py-2 text-sm font-semibold hover:bg-primaryDark transition-colors"
             >
-              Ver cardápio
+              View menu
             </Link>
             <button
               type="button"
               onClick={() => void signOut()}
               className="inline-flex rounded-full border border-slate-300 px-5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
             >
-              Sair
+              Sign out
             </button>
           </div>
         </div>
@@ -197,11 +228,15 @@ export default function SignInPage() {
   return (
     <section className="max-w-md mx-auto px-4 py-10 sm:py-14">
       <div className="rounded-2xl border border-slate-200/90 bg-white/95 shadow-lg shadow-primary/5 p-6 sm:p-8 space-y-6">
+        {hasFirstOrderPromo && (
+          <div className="rounded-xl border border-primary/25 bg-primary/10 px-4 py-3 text-sm text-primaryDark">
+            Sign in or create your account to unlock <strong>30% off on your first order</strong>.
+          </div>
+        )}
         <div className="text-center space-y-1">
-          <h1 className="font-display text-2xl font-semibold text-slate-900">Entrar ou criar conta</h1>
+          <h1 className="font-display text-2xl font-semibold text-slate-900">Sign in or create account</h1>
           <p className="text-sm text-slate-600">
-            Google, Facebook ou e-mail. Cadastro com nome e telefone opcional —{' '}
-            <strong className="text-slate-800">sem SMS</strong>; verificação só por e-mail.
+            Continue with Google or email. Sign up with your name and an optional phone number. Verification is by email only.
           </p>
         </div>
 
@@ -216,7 +251,7 @@ export default function SignInPage() {
               mode === 'login' ? 'bg-white text-primary shadow-sm' : 'text-slate-600'
             }`}
           >
-            Entrar
+            Sign In
           </button>
           <button
             type="button"
@@ -228,7 +263,7 @@ export default function SignInPage() {
               mode === 'register' ? 'bg-white text-primary shadow-sm' : 'text-slate-600'
             }`}
           >
-            Cadastrar
+            Register
           </button>
         </div>
 
@@ -242,15 +277,7 @@ export default function SignInPage() {
             <span className="text-lg" aria-hidden>
               G
             </span>
-            Continuar com Google
-          </button>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void handleSocial(signInWithFacebook, 'Facebook')}
-            className="flex items-center justify-center gap-2 w-full rounded-xl border border-slate-200 bg-[#1877F2] py-3 text-sm font-semibold text-white hover:bg-[#166FE5] disabled:opacity-60"
-          >
-            Continuar com Facebook
+            Continue with Google
           </button>
         </div>
 
@@ -259,7 +286,7 @@ export default function SignInPage() {
             <div className="w-full border-t border-slate-200" />
           </div>
           <div className="relative flex justify-center text-xs uppercase tracking-wide">
-            <span className="bg-white px-2 text-slate-500">ou e-mail</span>
+            <span className="bg-white px-2 text-slate-500">or email</span>
           </div>
         </div>
 
@@ -267,7 +294,7 @@ export default function SignInPage() {
           <form onSubmit={handleEmailLogin} className="space-y-4">
             <div>
               <label htmlFor="si-email" className="block text-xs font-medium text-slate-600 mb-1">
-                E-mail
+                Email
               </label>
               <input
                 id="si-email"
@@ -281,7 +308,7 @@ export default function SignInPage() {
             </div>
             <div>
               <label htmlFor="si-pass" className="block text-xs font-medium text-slate-600 mb-1">
-                Senha
+                Password
               </label>
               <input
                 id="si-pass"
@@ -299,14 +326,14 @@ export default function SignInPage() {
               disabled={busy}
               className="w-full rounded-xl bg-primary text-white py-3 text-sm font-semibold hover:bg-primaryDark disabled:opacity-60"
             >
-              {busy ? '…' : 'Entrar'}
+              {busy ? '…' : 'Sign In'}
             </button>
           </form>
         ) : (
           <form onSubmit={handleRegister} className="space-y-4">
             <div>
               <label htmlFor="reg-name" className="block text-xs font-medium text-slate-600 mb-1">
-                Nome completo
+                Full name
               </label>
               <input
                 id="reg-name"
@@ -320,7 +347,7 @@ export default function SignInPage() {
             </div>
             <div>
               <label htmlFor="reg-email" className="block text-xs font-medium text-slate-600 mb-1">
-                E-mail
+                Email
               </label>
               <input
                 id="reg-email"
@@ -334,7 +361,7 @@ export default function SignInPage() {
             </div>
             <div>
               <label htmlFor="reg-phone" className="block text-xs font-medium text-slate-600 mb-1">
-                Telefone <span className="text-slate-400 font-normal">(opcional, sem verificação SMS)</span>
+                Phone <span className="text-slate-400 font-normal">(optional, no SMS verification)</span>
               </label>
               <input
                 id="reg-phone"
@@ -348,7 +375,7 @@ export default function SignInPage() {
             </div>
             <div>
               <label htmlFor="reg-pass" className="block text-xs font-medium text-slate-600 mb-1">
-                Senha (mín. 6 caracteres)
+                Password (min. 6 characters)
               </label>
               <input
                 id="reg-pass"
@@ -362,7 +389,7 @@ export default function SignInPage() {
             </div>
             <div>
               <label htmlFor="reg-pass2" className="block text-xs font-medium text-slate-600 mb-1">
-                Confirmar senha
+                Confirm password
               </label>
               <input
                 id="reg-pass2"
@@ -380,7 +407,7 @@ export default function SignInPage() {
               disabled={busy}
               className="w-full rounded-xl bg-primary text-white py-3 text-sm font-semibold hover:bg-primaryDark disabled:opacity-60"
             >
-              {busy ? '…' : 'Criar conta'}
+              {busy ? '…' : 'Create account'}
             </button>
           </form>
         )}
@@ -391,15 +418,23 @@ export default function SignInPage() {
 
 function mapAuthError(code: string): string {
   const map: Record<string, string> = {
-    'auth/email-already-in-use': 'Este e-mail já está em uso.',
-    'auth/invalid-email': 'E-mail inválido.',
-    'auth/weak-password': 'Senha muito fraca.',
-    'auth/user-not-found': 'Usuário não encontrado.',
-    'auth/wrong-password': 'Senha incorreta.',
-    'auth/invalid-credential': 'E-mail ou senha incorretos.',
-    'auth/popup-blocked': 'Pop-up bloqueado. Permita pop-ups para este site.',
+    'auth/email-already-in-use': 'This email is already in use.',
+    'auth/invalid-email': 'Invalid email.',
+    'auth/weak-password': 'Password is too weak.',
+    'auth/user-not-found': 'User not found.',
+    'auth/wrong-password': 'Incorrect password.',
+    'auth/invalid-credential': 'Incorrect email or password.',
+    'auth/popup-blocked': 'Popup blocked. Please allow popups for this site.',
+    'auth/operation-not-allowed':
+      'This sign-in method is not enabled in Firebase Authentication yet.',
+    'auth/unauthorized-domain':
+      'This domain is not authorized in Firebase Authentication.',
+    'auth/cancelled-popup-request':
+      'Login popup was interrupted. Please try again.',
+    'auth/operation-not-supported-in-this-environment':
+      'This browser does not support popup login. We can continue with redirect.',
     'auth/account-exists-with-different-credential':
-      'Já existe uma conta com este e-mail usando outro método de login.',
+      'An account already exists with this email using another sign-in method.',
   };
-  return map[code] ?? 'Erro de autenticação. Tente novamente.';
+  return map[code] ?? 'Authentication error. Please try again.';
 }
